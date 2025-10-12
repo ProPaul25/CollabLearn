@@ -1,24 +1,18 @@
-// lib/main.dart
-
-import 'package:collablearn1/landing_page.dart'; // <-- 1. ADD THIS IMPORT
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:collablearn1/firebase_options.dart';
 import 'package:collablearn1/register_page.dart';
 import 'package:collablearn1/splash_page.dart';
+import 'package:collablearn1/landing_page.dart';
 
-void main() {
-  runApp(const MainAppWrapper());
-}
-
-class MainAppWrapper extends StatelessWidget {
-  const MainAppWrapper({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: SplashPage(),
-    );
-  }
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+  runApp(const MyApp());
 }
 
 class MyApp extends StatefulWidget {
@@ -40,7 +34,7 @@ class _MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Login Page',
+      title: 'CollabLearn',
       debugShowCheckedModeBanner: false,
       themeMode: _themeMode,
       theme: ThemeData(
@@ -63,10 +57,7 @@ class _MyAppState extends State<MyApp> {
           bodyMedium: TextStyle(color: Colors.white),
         ),
       ),
-      home: LoginPage(
-        onToggleTheme: _toggleTheme,
-        isDarkMode: _themeMode == ThemeMode.dark,
-      ),
+      home: SplashPage(onToggleTheme: _toggleTheme, isDarkMode: _themeMode == ThemeMode.dark),
     );
   }
 }
@@ -87,6 +78,81 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   bool _isPasswordVisible = false;
+  bool _isLoading = false;
+
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _login() async {
+    setState(() {
+      _isLoading = true;
+    });
+    try {
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+      );
+    } on FirebaseAuthException catch (e) {
+      String message;
+      if (e.code == 'user-not-found') {
+        message = 'No user found for that email.';
+      } else if (e.code == 'wrong-password') {
+        message = 'Wrong password provided for that user.';
+      } else {
+        message = 'An error occurred. Please try again.';
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _signInWithGoogle() async {
+    setState(() => _isLoading = true);
+    try {
+      final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
+      if (googleUser == null) {
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final OAuthCredential credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      await FirebaseAuth.instance.signInWithCredential(credential);
+
+      debugPrint("Google Sign-in successful!");
+    } on FirebaseAuthException catch (e) {
+      debugPrint("Firebase Auth Error: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error with Google Sign-in. $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -135,8 +201,7 @@ class _LoginPageState extends State<LoginPage> {
                       borderRadius: BorderRadius.circular(25),
                     ),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 30.0, vertical: 40.0),
+                      padding: const EdgeInsets.symmetric(horizontal: 30.0, vertical: 40.0),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -150,9 +215,10 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                           const SizedBox(height: 30),
                           _buildTextField(
-                            hintText: 'Your Name or your email',
-                            prefixIcon: Icons.person_outline,
-                            suffixIcon: Icons.check_circle_outline,
+                            controller: _emailController,
+                            hintText: 'Email',
+                            prefixIcon: Icons.email_outlined,
+                            keyboardType: TextInputType.emailAddress,
                           ),
                           const SizedBox(height: 20),
                           _buildPasswordField(context),
@@ -160,22 +226,11 @@ class _LoginPageState extends State<LoginPage> {
                           SizedBox(
                             width: double.infinity,
                             child: ElevatedButton(
-                              // --- 2. UPDATE THE onPressed CALLBACK ---
-                              onPressed: () {
-                                // For now, we'll navigate directly.
-                                // In a real app, you would validate credentials first.
-                                Navigator.of(context).pushReplacement(
-                                  MaterialPageRoute(
-                                    builder: (context) => const LandingPage(),
-                                  ),
-                                );
-                              },
+                              onPressed: _isLoading ? null : _login,
                               style: ElevatedButton.styleFrom(
                                 foregroundColor: Colors.white,
-                                backgroundColor:
-                                    Theme.of(context).colorScheme.primary,
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 18),
+                                backgroundColor: Theme.of(context).colorScheme.primary,
+                                padding: const EdgeInsets.symmetric(vertical: 18),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(15),
                                 ),
@@ -184,7 +239,9 @@ class _LoginPageState extends State<LoginPage> {
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
-                              child: const Text('Log In'),
+                              child: _isLoading
+                                  ? const CircularProgressIndicator(color: Colors.white)
+                                  : const Text('Log In'),
                             ),
                           ),
                           const SizedBox(height: 20),
@@ -194,10 +251,7 @@ class _LoginPageState extends State<LoginPage> {
                               Text(
                                 "You don't have an account? ",
                                 style: TextStyle(
-                                  color: Theme.of(context)
-                                      .textTheme
-                                      .bodyMedium!
-                                      .color,
+                                  color: Theme.of(context).textTheme.bodyMedium!.color,
                                 ),
                               ),
                               GestureDetector(
@@ -237,17 +291,40 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                           ),
                           const SizedBox(height: 20),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              _buildSocialIcon(
-                                  child: Image.asset(
-                                    'assets/google.png',
-                                    width: 30,
-                                    height: 30,
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: _isLoading ? null : _signInWithGoogle,
+                              style: ElevatedButton.styleFrom(
+                                foregroundColor: Colors.black,
+                                backgroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 18),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(15),
+                                  side: const BorderSide(color: Colors.grey),
+                                ),
+                              ),
+                              child: _isLoading
+                                ? const Center(child: SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2),
+                                  ))
+                                : Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Image.asset('assets/google.png', height: 24.0),
+                                      const SizedBox(width: 8.0),
+                                      const Text(
+                                        'Sign in with Google',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  context: context),
-                            ],
+                            ),
                           ),
                         ],
                       ),
@@ -262,7 +339,6 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  // --- Helper methods below are unchanged ---
   Widget _buildPasswordField(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
@@ -271,12 +347,12 @@ class _LoginPageState extends State<LoginPage> {
         borderRadius: BorderRadius.circular(15),
       ),
       child: TextField(
+        controller: _passwordController,
         obscureText: !_isPasswordVisible,
         decoration: InputDecoration(
-          hintText: '********',
+          hintText: 'Password',
           contentPadding: const EdgeInsets.symmetric(vertical: 18),
-          prefixIcon: Icon(Icons.lock_outline,
-              color: Theme.of(context).colorScheme.primary),
+          prefixIcon: Icon(Icons.lock_outline, color: Theme.of(context).colorScheme.primary),
           suffixIcon: IconButton(
             icon: Icon(
               _isPasswordVisible ? Icons.visibility : Icons.visibility_off,
@@ -295,8 +371,7 @@ class _LoginPageState extends State<LoginPage> {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(15),
-            borderSide:
-                BorderSide(color: Theme.of(context).colorScheme.primary),
+            borderSide: BorderSide(color: Theme.of(context).colorScheme.primary),
           ),
         ),
       ),
@@ -304,9 +379,10 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Widget _buildTextField({
+    required TextEditingController controller,
     required String hintText,
     required IconData prefixIcon,
-    IconData? suffixIcon,
+    TextInputType keyboardType = TextInputType.text,
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
@@ -315,14 +391,12 @@ class _LoginPageState extends State<LoginPage> {
         borderRadius: BorderRadius.circular(15),
       ),
       child: TextField(
+        controller: controller,
+        keyboardType: keyboardType,
         decoration: InputDecoration(
           hintText: hintText,
           contentPadding: const EdgeInsets.symmetric(vertical: 18),
-          prefixIcon:
-              Icon(prefixIcon, color: Theme.of(context).colorScheme.primary),
-          suffixIcon: suffixIcon != null
-              ? Icon(suffixIcon, color: Theme.of(context).colorScheme.primary)
-              : null,
+          prefixIcon: Icon(prefixIcon, color: Theme.of(context).colorScheme.primary),
           border: InputBorder.none,
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(15),
@@ -330,8 +404,7 @@ class _LoginPageState extends State<LoginPage> {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(15),
-            borderSide:
-                BorderSide(color: Theme.of(context).colorScheme.primary),
+            borderSide: BorderSide(color: Theme.of(context).colorScheme.primary),
           ),
         ),
       ),

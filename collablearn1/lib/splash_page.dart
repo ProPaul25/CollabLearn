@@ -1,9 +1,18 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-import 'package:collablearn1/main.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:collablearn1/main.dart'; // Import main.dart to access LoginPage class
+import 'package:collablearn1/landing_page.dart';
 
 class SplashPage extends StatefulWidget {
-  const SplashPage({super.key});
+  final VoidCallback onToggleTheme;
+  final bool isDarkMode;
+
+  const SplashPage({
+    super.key,
+    required this.onToggleTheme,
+    required this.isDarkMode,
+  });
 
   @override
   _SplashPageState createState() => _SplashPageState();
@@ -16,28 +25,42 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
   @override
   void initState() {
     super.initState();
-    // Initialize the animation controller
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 2), // Duration of the animation
+      duration: const Duration(seconds: 2),
     );
 
-    // Define the animation for the logo's opacity and scale
     _animation = CurvedAnimation(
       parent: _controller,
-      curve: Curves.easeInCubic, // Use a curve for a smoother effect
+      curve: Curves.easeInCubic,
     );
 
-    // Start the animation
     _controller.forward();
 
-    // Navigate to the next page after a delay
+    // After the splash screen delay, navigate to the correct page
     Timer(const Duration(seconds: 3), () {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (context) => const MyApp(), // Navigate to your main app widget
-        ),
-      );
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        // User is logged in, navigate to the LandingPage
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => LandingPage(
+              onToggleTheme: widget.onToggleTheme,
+              isDarkMode: widget.isDarkMode,
+            ),
+          ),
+        );
+      } else {
+        // User is not logged in, navigate to the LoginPage
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => LoginPage(
+              onToggleTheme: widget.onToggleTheme,
+              isDarkMode: widget.isDarkMode,
+            ),
+          ),
+        );
+      }
     });
   }
 
@@ -65,9 +88,9 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
         ),
         child: Center(
           child: ScaleTransition(
-            scale: _animation, // The logo grows from a smaller size
+            scale: _animation,
             child: FadeTransition(
-              opacity: _animation, // The logo fades in
+              opacity: _animation,
               child: Image.asset(
                 'assets/logo.png',
                 height: 200,

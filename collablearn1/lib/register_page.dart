@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:google_sign_in/google_sign_in.dart'; // Import Google Sign-In
 
 enum UserRole { instructor, student }
 
@@ -36,6 +39,62 @@ class _RegisterPageState extends State<RegisterPage> {
     super.dispose();
   }
 
+  // New method for Google Sign-in on the register page
+  Future<void> _signUpWithGoogle() async {
+    setState(() => _isLoading = true);
+    try {
+      final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
+      if (googleUser == null) {
+        // User cancelled the sign-in
+        setState(() => _isLoading = false);
+        return;
+      }
+      
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final OAuthCredential credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      // Sign in to Firebase with the Google credentials
+      final userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
+
+      // Save additional user data to Firestore
+      await FirebaseFirestore.instance.collection('users').doc(userCredential.user!.uid).set({
+        'firstName': googleUser.displayName?.split(' ').first ?? '',
+        'lastName': googleUser.displayName?.split(' ').last ?? '',
+        'entryNo': '', // Default empty for Google sign-ups
+        'role': 'student', // Default to student for Google sign-ups
+        'email': googleUser.email,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      debugPrint("Google user signed up with UID: ${userCredential.user?.uid}");
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Registration with Google Successful!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.pop(context); // Go back to the login screen
+      }
+    } on FirebaseAuthException catch (e) {
+      debugPrint("Firebase Auth Error: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error with Google Sign-up. $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+
   Future<void> _onSignUp() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -43,16 +102,23 @@ class _RegisterPageState extends State<RegisterPage> {
     setState(() => _isLoading = true);
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('user_email', _emailController.text.trim());
-      await prefs.setString('user_password', _passwordController.text.trim());
-      await prefs.setString('user_firstName', _firstNameController.text.trim());
-      await prefs.setString('user_lastName', _lastNameController.text.trim());
-      await prefs.setString('user_entryNo', _entryNoController.text.trim());
-      await prefs.setString('user_role', _selectedRole.toString());
-      await prefs.setBool('is_logged_in', true);
+      // 1. Create user with Firebase Authentication
+      final userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+      );
 
-      debugPrint("User data saved locally!");
+      // 2. Save additional user data to Firestore
+      await FirebaseFirestore.instance.collection('users').doc(userCredential.user!.uid).set({
+        'firstName': _firstNameController.text.trim(),
+        'lastName': _lastNameController.text.trim(),
+        'entryNo': _entryNoController.text.trim(),
+        'role': _selectedRole.toString().split('.').last, // Save as a string
+        'email': _emailController.text.trim(),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      debugPrint("User created with UID: ${userCredential.user?.uid}");
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -63,8 +129,23 @@ class _RegisterPageState extends State<RegisterPage> {
         );
         Navigator.pop(context); // Go back to the login screen
       }
+    } on FirebaseAuthException catch (e) {
+      String message;
+      if (e.code == 'weak-password') {
+        message = 'The password provided is too weak.';
+      } else if (e.code == 'email-already-in-use') {
+        message = 'The account already exists for that email.';
+      } else {
+        message = 'An error occurred. Please try again.';
+      }
+      debugPrint("Firebase Auth Error: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message), backgroundColor: Colors.red),
+        );
+      }
     } catch (e) {
-      debugPrint("Error saving data: $e");
+      debugPrint("Error during registration: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error: Could not save data. $e'), backgroundColor: Colors.red),
@@ -103,7 +184,7 @@ class _RegisterPageState extends State<RegisterPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   const SizedBox(height: 50),
-                  Image.asset('assets/logo.png', height: 180),
+                  Image.asset('assets/logo.png', height: 80),
                   const SizedBox(height: 30),
                   Container(
                     width: double.infinity,
@@ -244,13 +325,40 @@ class _RegisterPageState extends State<RegisterPage> {
                         const SizedBox(height: 20),
                         Text('or sign up with', style: TextStyle(color: isDark ? Colors.white70 : Colors.black54)),
                         const SizedBox(height: 15),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            GestureDetector(
-                                onTap: () => debugPrint('Google sign-up tapped'),
-                                child: Image.asset('assets/google.png', height: 40, width: 40)),
-                          ],
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: _isLoading ? null : _signUpWithGoogle,
+                            style: ElevatedButton.styleFrom(
+                              foregroundColor: Colors.black,
+                              backgroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 18),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(15),
+                                side: const BorderSide(color: Colors.grey),
+                              ),
+                            ),
+                            child: _isLoading
+                                ? const Center(child: SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2),
+                                  ))
+                                : Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Image.asset('assets/google.png', height: 24.0),
+                                      const SizedBox(width: 8.0),
+                                      const Text(
+                                        'Sign up with Google',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                          ),
                         ),
                         const SizedBox(height: 30),
                         Row(
@@ -278,11 +386,16 @@ class _RegisterPageState extends State<RegisterPage> {
     );
   }
 
-  // --- Helper methods below are unchanged ---
+  // Helper methods
   Widget _buildRoleSelector() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10),
-      decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade400), borderRadius: BorderRadius.circular(15)),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade400),
+        borderRadius: BorderRadius.circular(15),
+        color: isDark ? const Color(0xFF2A314D) : Colors.white,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -332,6 +445,7 @@ class _RegisterPageState extends State<RegisterPage> {
     Widget? suffixIcon,
     String? Function(String?)? validator,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return TextFormField(
       controller: controller,
       keyboardType: keyboardType,
@@ -346,7 +460,9 @@ class _RegisterPageState extends State<RegisterPage> {
         contentPadding: const EdgeInsets.symmetric(vertical: 15, horizontal: 20),
         suffixIcon: suffixIcon,
         filled: true,
-        fillColor: Colors.white,
+        fillColor: isDark ? const Color(0xFF2A314D) : Colors.white,
+        labelStyle: TextStyle(color: isDark ? Colors.white70 : Colors.black87),
+        hintStyle: TextStyle(color: isDark ? Colors.white54 : Colors.grey),
       ),
       validator: validator,
     );

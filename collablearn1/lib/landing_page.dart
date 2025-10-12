@@ -1,10 +1,17 @@
-// lib/landing_page.dart
-
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:collablearn1/main.dart';
 
 class LandingPage extends StatefulWidget {
-  const LandingPage({super.key});
+  final VoidCallback onToggleTheme;
+  final bool isDarkMode;
+  
+  const LandingPage({
+    super.key,
+    required this.onToggleTheme,
+    required this.isDarkMode,
+  });
 
   @override
   State<LandingPage> createState() => _LandingPageState();
@@ -13,6 +20,7 @@ class LandingPage extends StatefulWidget {
 class _LandingPageState extends State<LandingPage> {
   String _userName = "User";
   String _userEmail = "";
+  String _userRole = "";
 
   @override
   void initState() {
@@ -20,16 +28,28 @@ class _LandingPageState extends State<LandingPage> {
     _loadUserData();
   }
 
-  // Fetches the user's name from local storage to display it
+  // Fetches the user's data from Firestore
   Future<void> _loadUserData() async {
-    final prefs = await SharedPreferences.getInstance();
-    // Reads the first and last name saved during registration
-    final firstName = prefs.getString('user_firstName') ?? '';
-    final lastName = prefs.getString('user_lastName') ?? '';
-    setState(() {
-      _userName = "$firstName $lastName";
-      _userEmail = prefs.getString('user_email') ?? 'No email found';
-    });
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      if (userDoc.exists) {
+        final data = userDoc.data();
+        if (data != null) {
+          setState(() {
+            _userName = "${data['firstName'] ?? ''} ${data['lastName'] ?? ''}";
+            _userEmail = data['email'] ?? user.email ?? '';
+            _userRole = data['role'] ?? 'student';
+          });
+        }
+      }
+    }
+  }
+
+  // Logout functionality using Firebase
+  Future<void> _logout() async {
+    await FirebaseAuth.instance.signOut();
+    // The StreamBuilder in main.dart will automatically navigate to the login page.
   }
 
   @override
@@ -37,13 +57,25 @@ class _LandingPageState extends State<LandingPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Landing/classes'),
-        backgroundColor: const Color(0xFFF2E6FF), // Light purple background
+        backgroundColor: const Color(0xFFF2E6FF),
         elevation: 0,
+        actions: [
+          IconButton(
+            icon: Icon(
+              widget.isDarkMode ? Icons.light_mode : Icons.dark_mode,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            onPressed: widget.onToggleTheme,
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout, color: Colors.deepPurple),
+            onPressed: _logout,
+          ),
+        ],
       ),
-      drawer: Drawer(), // Adds the hamburger menu icon functionality
+      drawer: const Drawer(),
       body: Stack(
         children: [
-          // Background Gradient
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
@@ -83,7 +115,7 @@ class _LandingPageState extends State<LandingPage> {
                       _buildJoinClassButton(),
                       const Spacer(),
                       Image.asset(
-                        'assets/logo.png', // Using the logo from your pubspec
+                        'assets/logo.png',
                         height: 40,
                       ),
                       const SizedBox(height: 40),
@@ -136,7 +168,7 @@ class _LandingPageState extends State<LandingPage> {
                 children: [
                   const CircleAvatar(
                     radius: 35,
-                    backgroundImage: AssetImage('assets/background.jpg'), // Placeholder image
+                    backgroundImage: AssetImage('assets/background.jpg'),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
@@ -150,21 +182,13 @@ class _LandingPageState extends State<LandingPage> {
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        
-                        // --- FIX IS HERE: ADD THIS TEXT WIDGET ---
                         Text(
-                          _userEmail, // Display the email
+                          _userEmail,
                           style: const TextStyle(color: Colors.grey),
                         ),
-                        // --- END OF FIX ---
-
-                        const Text(
-                          'M.Tech CSE',
-                          style: TextStyle(color: Colors.grey),
-                        ),
-                        const Text(
-                          '2025-2027',
-                          style: TextStyle(color: Colors.grey),
+                        Text(
+                          _userRole, // Now displaying the role from Firestore
+                          style: const TextStyle(color: Colors.grey),
                         ),
                         const SizedBox(height: 4),
                         const Row(
@@ -176,8 +200,7 @@ class _LandingPageState extends State<LandingPage> {
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
-                            Icon(Icons.arrow_forward_ios,
-                                color: Colors.pink, size: 14),
+                            Icon(Icons.arrow_forward_ios, color: Colors.pink, size: 14),
                           ],
                         )
                       ],
@@ -211,7 +234,7 @@ class _LandingPageState extends State<LandingPage> {
           borderRadius: BorderRadius.circular(30),
         ),
         child: Container(
-          margin: const EdgeInsets.all(2), // This creates the border effect
+          margin: const EdgeInsets.all(2),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(30),
