@@ -1,4 +1,7 @@
+// lib/main.dart
+
 import 'package:flutter/material.dart';
+import 'package:collablearn1/register_page.dart'; // Make sure this path is correct
 
 void main() {
   runApp(const MyApp());
@@ -99,8 +102,7 @@ class _LoginPageState extends State<LoginPage> {
             image: const AssetImage(backgroundImage),
             fit: BoxFit.cover,
             colorFilter: isDark
-                ? ColorFilter.mode(
-                    Colors.black.withOpacity(0.6), BlendMode.darken)
+                ? ColorFilter.mode(Colors.black.withOpacity(0.6), BlendMode.darken)
                 : null,
           ),
         ),
@@ -170,12 +172,19 @@ class _LoginPageState extends State<LoginPage> {
                               Text(
                                 "You don't have an account? ",
                                 style: TextStyle(
-                                  color:
-                                      Theme.of(context).textTheme.bodyMedium!.color,
+                                  color: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium!
+                                      .color,
                                 ),
                               ),
                               GestureDetector(
-                                onTap: () {},
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(builder: (context) => const RegisterPage()),
+                                  );
+                                },
                                 child: Text(
                                   'Sign Up',
                                   style: TextStyle(
@@ -196,8 +205,9 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                           ),
                           const SizedBox(height: 20),
+                          // --- MODIFIED: Centered Google Logo and Removed Facebook ---
                           Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisAlignment: MainAxisAlignment.center, // Centers the row content
                             children: [
                               _buildSocialIcon(
                                   child: Image.asset(
@@ -206,16 +216,7 @@ class _LoginPageState extends State<LoginPage> {
                                     height: 30,
                                   ),
                                   context: context),
-                              const SizedBox(width: 20),
-                              // ✅ replaced phone image with Flutter's built-in icon
-                              _buildSocialIcon(
-                                child: Icon(
-                                  Icons.phone_android,
-                                  size: 28,
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                                context: context,
-                              ),
+                              // Removed the SizedBox and the second _buildSocialIcon (for phone)
                             ],
                           ),
                         ],
@@ -231,6 +232,7 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
+  // --- Helper methods below are unchanged ---
   Widget _buildPasswordField(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
@@ -317,14 +319,13 @@ class _LoginPageState extends State<LoginPage> {
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF2A314D) : Colors.white,
         borderRadius: BorderRadius.circular(10),
-        boxShadow: [
-          if (!isDark)
-            BoxShadow(
-              color: Colors.grey.withValues(alpha: 0.2),
-              spreadRadius: 1,
-              blurRadius: 3,
-              offset: const Offset(0, 2),
-            ),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black12, // Using modern, safe color
+            spreadRadius: 1,
+            blurRadius: 3,
+            offset: Offset(0, 2),
+          ),
         ],
       ),
       child: Center(child: child),
