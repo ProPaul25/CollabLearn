@@ -1,3 +1,6 @@
+// lib/main.dart
+
+import 'package:collablearn1/landing_page.dart'; // <-- 1. ADD THIS IMPORT
 import 'package:flutter/material.dart';
 import 'package:collablearn1/register_page.dart';
 import 'package:collablearn1/splash_page.dart';
@@ -11,7 +14,6 @@ class MainAppWrapper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // The wrapper's only job is to start the app with the splash screen.
     return const MaterialApp(
       debugShowCheckedModeBanner: false,
       home: SplashPage(),
@@ -27,7 +29,7 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  ThemeMode _themeMode = ThemeMode.light; // Manage theme state here
+  ThemeMode _themeMode = ThemeMode.light;
 
   void _toggleTheme() {
     setState(() {
@@ -37,7 +39,6 @@ class _MyAppState extends State<MyApp> {
 
   @override
   Widget build(BuildContext context) {
-    // MyApp is now the root widget that handles themes and presents the LoginPage.
     return MaterialApp(
       title: 'Login Page',
       debugShowCheckedModeBanner: false,
@@ -159,7 +160,16 @@ class _LoginPageState extends State<LoginPage> {
                           SizedBox(
                             width: double.infinity,
                             child: ElevatedButton(
-                              onPressed: () {},
+                              // --- 2. UPDATE THE onPressed CALLBACK ---
+                              onPressed: () {
+                                // For now, we'll navigate directly.
+                                // In a real app, you would validate credentials first.
+                                Navigator.of(context).pushReplacement(
+                                  MaterialPageRoute(
+                                    builder: (context) => const LandingPage(),
+                                  ),
+                                );
+                              },
                               style: ElevatedButton.styleFrom(
                                 foregroundColor: Colors.white,
                                 backgroundColor:
