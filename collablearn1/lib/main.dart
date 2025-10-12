@@ -1,8 +1,22 @@
 import 'package:flutter/material.dart';
-import 'package:collablearn1/register_page.dart'; // Make sure this path is correct
+import 'package:collablearn1/register_page.dart';
+import 'package:collablearn1/splash_page.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const MainAppWrapper());
+}
+
+class MainAppWrapper extends StatelessWidget {
+  const MainAppWrapper({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    // The wrapper's only job is to start the app with the splash screen.
+    return const MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: SplashPage(),
+    );
+  }
 }
 
 class MyApp extends StatefulWidget {
@@ -13,17 +27,17 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  ThemeMode _themeMode = ThemeMode.light; // default light mode
+  ThemeMode _themeMode = ThemeMode.light; // Manage theme state here
 
   void _toggleTheme() {
     setState(() {
-      _themeMode =
-          _themeMode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
+      _themeMode = _themeMode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    // MyApp is now the root widget that handles themes and presents the LoginPage.
     return MaterialApp(
       title: 'Login Page',
       debugShowCheckedModeBanner: false,
@@ -199,8 +213,7 @@ class _LoginPageState extends State<LoginPage> {
                                   'Sign Up',
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
-                                    color:
-                                        Theme.of(context).colorScheme.primary,
+                                    color: Theme.of(context).colorScheme.primary,
                                   ),
                                 ),
                               ),
@@ -210,13 +223,12 @@ class _LoginPageState extends State<LoginPage> {
                           Text(
                             'or sign in with',
                             style: TextStyle(
-                              color:
-                                  Theme.of(context).textTheme.bodyMedium!.color,
+                              color: Theme.of(context).textTheme.bodyMedium!.color,
                             ),
                           ),
                           const SizedBox(height: 20),
                           Row(
-                            mainAxisAlignment: MainAxisAlignment.center, // Centers the row content
+                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               _buildSocialIcon(
                                   child: Image.asset(
