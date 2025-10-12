@@ -1,5 +1,3 @@
-// lib/main.dart
-
 import 'package:flutter/material.dart';
 import 'package:collablearn1/register_page.dart'; // Make sure this path is correct
 
@@ -182,7 +180,19 @@ class _LoginPageState extends State<LoginPage> {
                                 onTap: () {
                                   Navigator.push(
                                     context,
-                                    MaterialPageRoute(builder: (context) => const RegisterPage()),
+                                    PageRouteBuilder(
+                                      pageBuilder: (context, animation, secondaryAnimation) => const RegisterPage(),
+                                      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                                        const begin = Offset(1.0, 0.0);
+                                        const end = Offset.zero;
+                                        const curve = Curves.ease;
+                                        var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+                                        return SlideTransition(
+                                          position: animation.drive(tween),
+                                          child: child,
+                                        );
+                                      },
+                                    ),
                                   );
                                 },
                                 child: Text(
@@ -205,7 +215,6 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                           ),
                           const SizedBox(height: 20),
-                          // --- MODIFIED: Centered Google Logo and Removed Facebook ---
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center, // Centers the row content
                             children: [
@@ -216,7 +225,6 @@ class _LoginPageState extends State<LoginPage> {
                                     height: 30,
                                   ),
                                   context: context),
-                              // Removed the SizedBox and the second _buildSocialIcon (for phone)
                             ],
                           ),
                         ],
@@ -321,7 +329,7 @@ class _LoginPageState extends State<LoginPage> {
         borderRadius: BorderRadius.circular(10),
         boxShadow: const [
           BoxShadow(
-            color: Colors.black12, // Using modern, safe color
+            color: Colors.black12,
             spreadRadius: 1,
             blurRadius: 3,
             offset: Offset(0, 2),

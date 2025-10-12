@@ -1,5 +1,3 @@
-// lib/register_page.dart
-
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -81,14 +79,19 @@ class _RegisterPageState extends State<RegisterPage> {
 
   @override
   Widget build(BuildContext context) {
+    const String backgroundImage = 'assets/background.jpg';
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
       backgroundColor: Colors.grey[850],
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF8A2BE2), Color(0xFFFF1493)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+        decoration: BoxDecoration(
+          image: DecorationImage(
+            image: const AssetImage(backgroundImage),
+            fit: BoxFit.cover,
+            colorFilter: isDark
+                ? ColorFilter.mode(Colors.black.withOpacity(0.6), BlendMode.darken)
+                : null,
           ),
         ),
         child: Center(
@@ -100,14 +103,13 @@ class _RegisterPageState extends State<RegisterPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   const SizedBox(height: 50),
-                  // Using 'assets/logo.png' to match your pubspec.yaml
-                  Image.asset('assets/logo.png', height: 80),
+                  Image.asset('assets/logo.png', height: 180),
                   const SizedBox(height: 30),
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(25.0),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: isDark ? const Color(0xFF1C2239) : Colors.white,
                       borderRadius: BorderRadius.circular(30),
                       boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, 5))],
                     ),
@@ -240,24 +242,21 @@ class _RegisterPageState extends State<RegisterPage> {
                           ),
                         ),
                         const SizedBox(height: 20),
-                        const Text('or sign up with', style: TextStyle(color: Colors.black54)),
+                        Text('or sign up with', style: TextStyle(color: isDark ? Colors.white70 : Colors.black54)),
                         const SizedBox(height: 15),
-                        // --- MODIFIED: Centered Google Logo and Removed Facebook ---
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.center, // Centers the row content
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             GestureDetector(
                                 onTap: () => debugPrint('Google sign-up tapped'),
-                                // Using 'assets/google.png'
                                 child: Image.asset('assets/google.png', height: 40, width: 40)),
-                            // Removed the SizedBox and the second GestureDetector (for Facebook)
                           ],
                         ),
                         const SizedBox(height: 30),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            const Text('Already have an account? ', style: TextStyle(color: Colors.black54)),
+                            Text('Already have an account? ', style: TextStyle(color: isDark ? Colors.white70 : Colors.black54)),
                             GestureDetector(
                               onTap: () {
                                 Navigator.pop(context);
