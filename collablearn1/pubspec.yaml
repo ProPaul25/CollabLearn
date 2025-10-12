@@ -1,0 +1,29 @@
+name: collablearn1
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.9.2 <4.0.0' # Updated SDK version range for better future-proofing
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/facebook.png
+    - assets/google.png
+    - assets/logo.png
+    - assets/background.jpg
