@@ -63,7 +63,7 @@ class _LandingPageState extends State<LandingPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Landing/classes'),
+        title: const Text('HOME'),
         backgroundColor: const Color(0xFFF2E6FF),
         elevation: 0,
         actions: [
