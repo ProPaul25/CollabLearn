@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:google_sign_in/google_sign_in.dart'; // Import Google Sign-In
+import 'package:google_sign_in/google_sign_in.dart';
 
 enum UserRole { instructor, student }
 
@@ -39,13 +38,11 @@ class _RegisterPageState extends State<RegisterPage> {
     super.dispose();
   }
 
-  // New method for Google Sign-in on the register page
   Future<void> _signUpWithGoogle() async {
     setState(() => _isLoading = true);
     try {
       final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
       if (googleUser == null) {
-        // User cancelled the sign-in
         setState(() => _isLoading = false);
         return;
       }
@@ -56,7 +53,6 @@ class _RegisterPageState extends State<RegisterPage> {
         idToken: googleAuth.idToken,
       );
 
-      // Sign in to Firebase with the Google credentials
       final userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
 
       // Save additional user data to Firestore
@@ -78,7 +74,7 @@ class _RegisterPageState extends State<RegisterPage> {
             backgroundColor: Colors.green,
           ),
         );
-        Navigator.pop(context); // Go back to the login screen
+        Navigator.pop(context);
       }
     } on FirebaseAuthException catch (e) {
       debugPrint("Firebase Auth Error: $e");
@@ -102,18 +98,16 @@ class _RegisterPageState extends State<RegisterPage> {
     setState(() => _isLoading = true);
 
     try {
-      // 1. Create user with Firebase Authentication
       final userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
 
-      // 2. Save additional user data to Firestore
       await FirebaseFirestore.instance.collection('users').doc(userCredential.user!.uid).set({
         'firstName': _firstNameController.text.trim(),
         'lastName': _lastNameController.text.trim(),
         'entryNo': _entryNoController.text.trim(),
-        'role': _selectedRole.toString().split('.').last, // Save as a string
+        'role': _selectedRole.toString().split('.').last,
         'email': _emailController.text.trim(),
         'createdAt': FieldValue.serverTimestamp(),
       });
@@ -127,7 +121,7 @@ class _RegisterPageState extends State<RegisterPage> {
             backgroundColor: Colors.green,
           ),
         );
-        Navigator.pop(context); // Go back to the login screen
+        Navigator.pop(context);
       }
     } on FirebaseAuthException catch (e) {
       String message;
@@ -386,7 +380,6 @@ class _RegisterPageState extends State<RegisterPage> {
     );
   }
 
-  // Helper methods
   Widget _buildRoleSelector() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(

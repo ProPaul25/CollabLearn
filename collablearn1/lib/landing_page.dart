@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:collablearn1/main.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 class LandingPage extends StatefulWidget {
   final VoidCallback onToggleTheme;
@@ -42,6 +42,13 @@ class _LandingPageState extends State<LandingPage> {
             _userRole = data['role'] ?? 'student';
           });
         }
+      } else {
+        // Handle Google Sign-in users who don't have a Firestore document yet
+        setState(() {
+          _userName = user.displayName ?? "User";
+          _userEmail = user.email ?? "";
+          _userRole = "student"; // Default role for new users
+        });
       }
     }
   }
@@ -49,7 +56,7 @@ class _LandingPageState extends State<LandingPage> {
   // Logout functionality using Firebase
   Future<void> _logout() async {
     await FirebaseAuth.instance.signOut();
-    // The StreamBuilder in main.dart will automatically navigate to the login page.
+    await GoogleSignIn().signOut(); // Also sign out from Google
   }
 
   @override
@@ -187,7 +194,7 @@ class _LandingPageState extends State<LandingPage> {
                           style: const TextStyle(color: Colors.grey),
                         ),
                         Text(
-                          _userRole, // Now displaying the role from Firestore
+                          _userRole,
                           style: const TextStyle(color: Colors.grey),
                         ),
                         const SizedBox(height: 4),

@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:collablearn1/firebase_options.dart';
-import 'package:collablearn1/register_page.dart';
-import 'package:collablearn1/splash_page.dart';
+import 'package:collablearn1/login_page.dart';
 import 'package:collablearn1/landing_page.dart';
+import 'package:collablearn1/splash_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -57,381 +56,31 @@ class _MyAppState extends State<MyApp> {
           bodyMedium: TextStyle(color: Colors.white),
         ),
       ),
-      home: SplashPage(onToggleTheme: _toggleTheme, isDarkMode: _themeMode == ThemeMode.dark),
-    );
-  }
-}
-
-class LoginPage extends StatefulWidget {
-  final VoidCallback onToggleTheme;
-  final bool isDarkMode;
-
-  const LoginPage({
-    super.key,
-    required this.onToggleTheme,
-    required this.isDarkMode,
-  });
-
-  @override
-  State<LoginPage> createState() => _LoginPageState();
-}
-
-class _LoginPageState extends State<LoginPage> {
-  bool _isPasswordVisible = false;
-  bool _isLoading = false;
-
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-
-  @override
-  void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _login() async {
-    setState(() {
-      _isLoading = true;
-    });
-    try {
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
-      );
-    } on FirebaseAuthException catch (e) {
-      String message;
-      if (e.code == 'user-not-found') {
-        message = 'No user found for that email.';
-      } else if (e.code == 'wrong-password') {
-        message = 'Wrong password provided for that user.';
-      } else {
-        message = 'An error occurred. Please try again.';
-      }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(message), backgroundColor: Colors.red),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _signInWithGoogle() async {
-    setState(() => _isLoading = true);
-    try {
-      final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
-      if (googleUser == null) {
-        setState(() => _isLoading = false);
-        return;
-      }
-
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
-      final OAuthCredential credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-
-      await FirebaseAuth.instance.signInWithCredential(credential);
-
-      debugPrint("Google Sign-in successful!");
-    } on FirebaseAuthException catch (e) {
-      debugPrint("Firebase Auth Error: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error with Google Sign-in. $e'), backgroundColor: Colors.red),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    const String backgroundImage = 'assets/background.jpg';
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Scaffold(
-      resizeToAvoidBottomInset: false,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: Icon(
-              widget.isDarkMode ? Icons.light_mode : Icons.dark_mode,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-            onPressed: widget.onToggleTheme,
-          ),
-          const SizedBox(width: 10),
-        ],
+      // This StreamBuilder listens for changes in authentication state.
+      // It's the most reliable way to handle app navigation after login/logout.
+      home: StreamBuilder<User?>(
+        stream: FirebaseAuth.instance.authStateChanges(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return SplashPage(
+              onToggleTheme: _toggleTheme,
+              isDarkMode: _themeMode == ThemeMode.dark,
+            );
+          }
+          if (snapshot.hasData) {
+            // User is signed in
+            return LandingPage(
+              onToggleTheme: _toggleTheme,
+              isDarkMode: _themeMode == ThemeMode.dark,
+            );
+          }
+          // User is signed out
+          return LoginPage(
+            onToggleTheme: _toggleTheme,
+            isDarkMode: _themeMode == ThemeMode.dark,
+          );
+        },
       ),
-      body: Container(
-        decoration: BoxDecoration(
-          image: DecorationImage(
-            image: const AssetImage(backgroundImage),
-            fit: BoxFit.cover,
-            colorFilter: isDark
-                ? ColorFilter.mode(Colors.black.withOpacity(0.6), BlendMode.darken)
-                : null,
-          ),
-        ),
-        child: Center(
-          child: SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Image.asset('assets/logo.png', height: 200),
-                  const SizedBox(height: 50),
-                  Card(
-                    color: isDark ? const Color(0xFF1C2239) : Colors.white,
-                    elevation: 5,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(25),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 30.0, vertical: 40.0),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            'Login.',
-                            style: TextStyle(
-                              fontSize: 32,
-                              fontWeight: FontWeight.bold,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                          ),
-                          const SizedBox(height: 30),
-                          _buildTextField(
-                            controller: _emailController,
-                            hintText: 'Email',
-                            prefixIcon: Icons.email_outlined,
-                            keyboardType: TextInputType.emailAddress,
-                          ),
-                          const SizedBox(height: 20),
-                          _buildPasswordField(context),
-                          const SizedBox(height: 40),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              onPressed: _isLoading ? null : _login,
-                              style: ElevatedButton.styleFrom(
-                                foregroundColor: Colors.white,
-                                backgroundColor: Theme.of(context).colorScheme.primary,
-                                padding: const EdgeInsets.symmetric(vertical: 18),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(15),
-                                ),
-                                textStyle: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              child: _isLoading
-                                  ? const CircularProgressIndicator(color: Colors.white)
-                                  : const Text('Log In'),
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                "You don't have an account? ",
-                                style: TextStyle(
-                                  color: Theme.of(context).textTheme.bodyMedium!.color,
-                                ),
-                              ),
-                              GestureDetector(
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    PageRouteBuilder(
-                                      pageBuilder: (context, animation, secondaryAnimation) => const RegisterPage(),
-                                      transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                                        const begin = Offset(1.0, 0.0);
-                                        const end = Offset.zero;
-                                        const curve = Curves.ease;
-                                        var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
-                                        return SlideTransition(
-                                          position: animation.drive(tween),
-                                          child: child,
-                                        );
-                                      },
-                                    ),
-                                  );
-                                },
-                                child: Text(
-                                  'Sign Up',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: Theme.of(context).colorScheme.primary,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-                          Text(
-                            'or sign in with',
-                            style: TextStyle(
-                              color: Theme.of(context).textTheme.bodyMedium!.color,
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              onPressed: _isLoading ? null : _signInWithGoogle,
-                              style: ElevatedButton.styleFrom(
-                                foregroundColor: Colors.black,
-                                backgroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 18),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(15),
-                                  side: const BorderSide(color: Colors.grey),
-                                ),
-                              ),
-                              child: _isLoading
-                                ? const Center(child: SizedBox(
-                                    height: 20,
-                                    width: 20,
-                                    child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2),
-                                  ))
-                                : Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Image.asset('assets/google.png', height: 24.0),
-                                      const SizedBox(width: 8.0),
-                                      const Text(
-                                        'Sign in with Google',
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPasswordField(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF2A314D) : const Color(0xFFF0F0F0),
-        borderRadius: BorderRadius.circular(15),
-      ),
-      child: TextField(
-        controller: _passwordController,
-        obscureText: !_isPasswordVisible,
-        decoration: InputDecoration(
-          hintText: 'Password',
-          contentPadding: const EdgeInsets.symmetric(vertical: 18),
-          prefixIcon: Icon(Icons.lock_outline, color: Theme.of(context).colorScheme.primary),
-          suffixIcon: IconButton(
-            icon: Icon(
-              _isPasswordVisible ? Icons.visibility : Icons.visibility_off,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-            onPressed: () {
-              setState(() {
-                _isPasswordVisible = !_isPasswordVisible;
-              });
-            },
-          ),
-          border: InputBorder.none,
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(15),
-            borderSide: BorderSide.none,
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(15),
-            borderSide: BorderSide(color: Theme.of(context).colorScheme.primary),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String hintText,
-    required IconData prefixIcon,
-    TextInputType keyboardType = TextInputType.text,
-  }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF2A314D) : const Color(0xFFF0F0F0),
-        borderRadius: BorderRadius.circular(15),
-      ),
-      child: TextField(
-        controller: controller,
-        keyboardType: keyboardType,
-        decoration: InputDecoration(
-          hintText: hintText,
-          contentPadding: const EdgeInsets.symmetric(vertical: 18),
-          prefixIcon: Icon(prefixIcon, color: Theme.of(context).colorScheme.primary),
-          border: InputBorder.none,
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(15),
-            borderSide: BorderSide.none,
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(15),
-            borderSide: BorderSide(color: Theme.of(context).colorScheme.primary),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSocialIcon({
-    required Widget child,
-    required BuildContext context,
-  }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      width: 50,
-      height: 50,
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF2A314D) : Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        boxShadow: const [
-          BoxShadow(
-            color: Colors.black12,
-            spreadRadius: 1,
-            blurRadius: 3,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Center(child: child),
     );
   }
 }
