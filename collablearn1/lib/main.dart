@@ -78,7 +78,7 @@ class _MyAppState extends State<MyApp> {
           return LoginPage(
             onToggleTheme: _toggleTheme,
             isDarkMode: _themeMode == ThemeMode.dark,
-          );
+          );    //s
         },
       ),
     );
