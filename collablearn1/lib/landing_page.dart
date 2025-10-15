@@ -4,8 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-// Import new page for class list, you'll need to create this file
-// import 'package:collablearn1/class_list_page.dart'; 
+import 'package:collablearn1/edit_profile_page.dart';
 
 class LandingPage extends StatefulWidget {
   final VoidCallback onToggleTheme;
@@ -24,7 +23,8 @@ class LandingPage extends StatefulWidget {
 class _LandingPageState extends State<LandingPage> {
   String _userName = "User";
   String _userEmail = "";
-  String _userRole = "student"; // Default to student
+  String _userRole = "";
+  String? _profileImageUrl; // Add this to store the profile image URL
 
   @override
   void initState() {
@@ -38,18 +38,20 @@ class _LandingPageState extends State<LandingPage> {
       final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
       if (userDoc.exists) {
         final data = userDoc.data();
-        if (data != null) {
+        if (data != null && mounted) {
           setState(() {
             _userName = "${data['firstName'] ?? ''} ${data['lastName'] ?? ''}";
             _userEmail = data['email'] ?? user.email ?? '';
             _userRole = data['role'] ?? 'student';
+            _profileImageUrl = data['profileImageUrl']; // Load profile image URL
           });
         }
-      } else {
+      } else if (mounted) {
         setState(() {
           _userName = user.displayName ?? "User";
           _userEmail = user.email ?? "";
           _userRole = "student";
+          _profileImageUrl = user.photoURL; // Try to get from Firebase Auth if not in Firestore
         });
       }
     }
@@ -114,29 +116,37 @@ class _LandingPageState extends State<LandingPage> {
             child: Container(
               width: double.infinity,
               decoration: BoxDecoration(
-                color: Theme.of(context).scaffoldBackgroundColor, // Use theme color
+                color: Theme.of(context).scaffoldBackgroundColor,
                 borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(40.0),
                   topRight: Radius.circular(40.0),
                 ),
               ),
               child: StreamBuilder<QuerySnapshot>(
-                // CHANGE: Listen to the classes collection where the user's ID exists
                 stream: FirebaseFirestore.instance
-                    .collection('classes')
-                    .where('studentIds', arrayContains: FirebaseAuth.instance.currentUser?.uid)
-                    .snapshots(),
+                    .collection('users') // Assuming classes are tied to users for roles
+                    .doc(FirebaseAuth.instance.currentUser?.uid)
+                    .snapshots()
+                    .map((snapshot) {
+                      if (snapshot.exists) {
+                        final data = snapshot.data();
+                        _userRole = data?['role'] ?? 'student'; // Update role on stream
+                      }
+                      return null; // Don't return anything for this stream, just update role
+                    })
+                    .asyncExpand((_) => FirebaseFirestore.instance
+                        .collection('classes')
+                        .where('studentIds', arrayContains: FirebaseAuth.instance.currentUser?.uid)
+                        .snapshots()),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
                   }
 
                   if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                    // Show "no classes" view if there's no data
                     return _buildNoClassesView();
                   }
 
-                  // If there is data, show the list of classes
                   return _buildClassListView(snapshot.data!.docs);
                 },
               ),
@@ -148,7 +158,6 @@ class _LandingPageState extends State<LandingPage> {
   }
 
   Widget _buildProfileCard() {
-    // ... (Your existing code for _buildProfileCard) ...
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
       child: Card(
@@ -185,14 +194,20 @@ class _LandingPageState extends State<LandingPage> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
+                  // CHANGE HERE: Display actual profile picture or placeholder
                   CircleAvatar(
                     radius: 35,
                     backgroundColor: Colors.grey[200],
-                    child: Icon(
-                      Icons.person,
-                      size: 40,
-                      color: Colors.grey[400],
-                    ),
+                    backgroundImage: _profileImageUrl != null
+                        ? NetworkImage(_profileImageUrl!) as ImageProvider
+                        : null, // Use NetworkImage if URL exists
+                    child: _profileImageUrl == null
+                        ? Icon(
+                            Icons.person,
+                            size: 40,
+                            color: Colors.grey[400],
+                          )
+                        : null, // Show placeholder icon if no image
                   ),
                   const SizedBox(width: 16),
                   Expanded(
@@ -216,17 +231,29 @@ class _LandingPageState extends State<LandingPage> {
                             style: const TextStyle(color: Colors.grey),
                           ),
                           const SizedBox(height: 4),
-                          const Row(
-                            children: [
-                              Text(
-                                'Edit Profile',
-                                style: TextStyle(
-                                  color: Colors.pink,
-                                  fontWeight: FontWeight.bold,
+                          InkWell(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => const EditProfilePage()),
+                              ).then((_) {
+                                // Reload user data when returning from EditProfilePage
+                                _loadUserData();
+                              });
+                            },
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'Edit Profile',
+                                  style: TextStyle(
+                                    color: Colors.pink,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
-                              ),
-                              Icon(Icons.arrow_forward_ios, color: Colors.pink, size: 14),
-                            ],
+                                Icon(Icons.arrow_forward_ios, color: Colors.pink, size: 14),
+                              ],
+                            ),
                           )
                         ],
                       ),
@@ -251,7 +278,8 @@ class _LandingPageState extends State<LandingPage> {
     );
   }
 
-  // NEW METHOD: Shows the view for no classes enrolled
+  // ... (rest of the LandingPage code for _buildNoClassesView, _buildClassListView, etc.)
+
   Widget _buildNoClassesView() {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -266,7 +294,7 @@ class _LandingPageState extends State<LandingPage> {
         ),
         const SizedBox(height: 30),
         if (_userRole == 'instructor') _buildCreateClassButton(),
-        const SizedBox(height: 20),
+        if (_userRole == 'instructor') const SizedBox(height: 20),
         _buildJoinClassButton(),
         const Spacer(),
         Image.asset(
@@ -278,7 +306,6 @@ class _LandingPageState extends State<LandingPage> {
     );
   }
 
-  // NEW METHOD: Shows a list of enrolled classes
   Widget _buildClassListView(List<QueryDocumentSnapshot> classes) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10.0),
@@ -312,11 +339,7 @@ class _LandingPageState extends State<LandingPage> {
               borderRadius: BorderRadius.circular(15),
             ),
             child: InkWell(
-              onTap: () {
-                // Navigate to the class detail page
-                // You would implement this navigation
-                // Navigator.push(context, MaterialPageRoute(builder: (context) => ClassDetailPage(classId: classDoc.id)));
-              },
+              onTap: () {},
               borderRadius: BorderRadius.circular(15),
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
@@ -357,15 +380,13 @@ class _LandingPageState extends State<LandingPage> {
         child: Container(
           margin: const EdgeInsets.all(2),
           decoration: BoxDecoration(
-            color: Theme.of(context).scaffoldBackgroundColor, // Use theme color
+            color: Theme.of(context).scaffoldBackgroundColor,
             borderRadius: BorderRadius.circular(30),
           ),
           child: Material(
             color: Colors.transparent,
             child: InkWell(
-              onTap: () {
-                // TODO: Implement navigation to Create Class page
-              },
+              onTap: () {},
               borderRadius: BorderRadius.circular(30),
               child: const Center(
                 child: Padding(
@@ -393,9 +414,7 @@ class _LandingPageState extends State<LandingPage> {
       child: SizedBox(
         width: double.infinity,
         child: ElevatedButton(
-          onPressed: () {
-            // TODO: Implement navigation to Join Class page
-          },
+          onPressed: () {},
           style: ElevatedButton.styleFrom(
             backgroundColor: Theme.of(context).colorScheme.primary,
             foregroundColor: Colors.white,
