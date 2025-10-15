@@ -1,3 +1,5 @@
+// lib/main.dart
+
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -56,31 +58,47 @@ class _MyAppState extends State<MyApp> {
           bodyMedium: TextStyle(color: Colors.white),
         ),
       ),
-      // This StreamBuilder listens for changes in authentication state.
-      // It's the most reliable way to handle app navigation after login/logout.
-      home: StreamBuilder<User?>(
-        stream: FirebaseAuth.instance.authStateChanges(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return SplashPage(
-              onToggleTheme: _toggleTheme,
-              isDarkMode: _themeMode == ThemeMode.dark,
-            );
-          }
-          if (snapshot.hasData) {
-            // User is signed in
-            return LandingPage(
-              onToggleTheme: _toggleTheme,
-              isDarkMode: _themeMode == ThemeMode.dark,
-            );
-          }
-          // User is signed out
-          return LoginPage(
-            onToggleTheme: _toggleTheme,
-            isDarkMode: _themeMode == ThemeMode.dark,
-          );    //s
-        },
+      // The app will now always start at the SplashPage
+      home: SplashPage(
+        onToggleTheme: _toggleTheme,
+        isDarkMode: _themeMode == ThemeMode.dark,
       ),
+    );
+  }
+}
+
+/// A "gatekeeper" widget that listens to the authentication state and directs
+/// the user to the correct page AFTER the splash screen is done.
+class AuthGate extends StatelessWidget {
+  final VoidCallback onToggleTheme;
+  final bool isDarkMode;
+
+  const AuthGate({
+    super.key,
+    required this.onToggleTheme,
+    required this.isDarkMode,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        // If the snapshot has data, it means the user is logged in
+        if (snapshot.hasData) {
+          return LandingPage(
+            onToggleTheme: onToggleTheme,
+            isDarkMode: isDarkMode,
+          );
+        }
+        // Otherwise, the user is not logged in
+        else {
+          return LoginPage(
+            onToggleTheme: onToggleTheme,
+            isDarkMode: isDarkMode,
+          );
+        }
+      },
     );
   }
 }
