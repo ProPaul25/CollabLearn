@@ -42,9 +42,7 @@ class _LoginPageState extends State<LoginPage> {
       );
     } on FirebaseAuthException catch (e) {
       String message;
-      // This updated logic handles the `invalid-credential` error code,
-      // which is often returned instead of 'user-not-found' or 'wrong-password'
-      // to prevent email enumeration attacks.
+     
       if (e.code == 'user-not-found' || e.code == 'wrong-password' || e.code == 'invalid-credential') {
         message = 'Invalid email or password. Please check your credentials.';
       } else {

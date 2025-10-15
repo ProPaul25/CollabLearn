@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+// Import new page for class list, you'll need to create this file
+// import 'package:collablearn1/class_list_page.dart'; 
 
 class LandingPage extends StatefulWidget {
   final VoidCallback onToggleTheme;
@@ -22,7 +24,7 @@ class LandingPage extends StatefulWidget {
 class _LandingPageState extends State<LandingPage> {
   String _userName = "User";
   String _userEmail = "";
-  String _userRole = "";
+  String _userRole = "student"; // Default to student
 
   @override
   void initState() {
@@ -73,9 +75,8 @@ class _LandingPageState extends State<LandingPage> {
             ),
             onPressed: widget.onToggleTheme,
           ),
-          // CHANGE 1: Added Tooltip to the logout button
           Tooltip(
-            message: 'Sign Out', // This text will appear on hover/long-press
+            message: 'Sign Out',
             child: IconButton(
               icon: const Icon(Icons.logout, color: Colors.deepPurple),
               onPressed: _logout,
@@ -112,35 +113,32 @@ class _LandingPageState extends State<LandingPage> {
             flex: 3,
             child: Container(
               width: double.infinity,
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.only(
+              decoration: BoxDecoration(
+                color: Theme.of(context).scaffoldBackgroundColor, // Use theme color
+                borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(40.0),
                   topRight: Radius.circular(40.0),
                 ),
               ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text(
-                    "You aren't in any class!",
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey,
-                    ),
-                  ),
-                  const SizedBox(height: 30),
-                  _buildCreateClassButton(),
-                  const SizedBox(height: 20),
-                  _buildJoinClassButton(),
-                  const Spacer(),
-                  Image.asset(
-                    'assets/logo.png',
-                    height: 60,
-                  ),
-                  const SizedBox(height: 40),
-                ],
+              child: StreamBuilder<QuerySnapshot>(
+                // CHANGE: Listen to the classes collection where the user's ID exists
+                stream: FirebaseFirestore.instance
+                    .collection('classes')
+                    .where('studentIds', arrayContains: FirebaseAuth.instance.currentUser?.uid)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+
+                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                    // Show "no classes" view if there's no data
+                    return _buildNoClassesView();
+                  }
+
+                  // If there is data, show the list of classes
+                  return _buildClassListView(snapshot.data!.docs);
+                },
               ),
             ),
           ),
@@ -150,6 +148,7 @@ class _LandingPageState extends State<LandingPage> {
   }
 
   Widget _buildProfileCard() {
+    // ... (Your existing code for _buildProfileCard) ...
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
       child: Card(
@@ -181,7 +180,6 @@ class _LandingPageState extends State<LandingPage> {
                 ],
               ),
             ),
-            // CHANGE 2: Reduced vertical padding slightly for more space
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
               child: Row(
@@ -198,8 +196,6 @@ class _LandingPageState extends State<LandingPage> {
                   ),
                   const SizedBox(width: 16),
                   Expanded(
-                    // CHANGE 3: Wrapped the Column in a SingleChildScrollView
-                    // This is the definitive fix for any overflow errors.
                     child: SingleChildScrollView(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -255,7 +251,100 @@ class _LandingPageState extends State<LandingPage> {
     );
   }
 
-  // ... rest of the helper methods are unchanged ...
+  // NEW METHOD: Shows the view for no classes enrolled
+  Widget _buildNoClassesView() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Text(
+          "You aren't in any class!",
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+            color: Colors.grey,
+          ),
+        ),
+        const SizedBox(height: 30),
+        if (_userRole == 'instructor') _buildCreateClassButton(),
+        const SizedBox(height: 20),
+        _buildJoinClassButton(),
+        const Spacer(),
+        Image.asset(
+          'assets/logo.png',
+          height: 60,
+        ),
+        const SizedBox(height: 40),
+      ],
+    );
+  }
+
+  // NEW METHOD: Shows a list of enrolled classes
+  Widget _buildClassListView(List<QueryDocumentSnapshot> classes) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10.0),
+      child: ListView.builder(
+        itemCount: classes.length + 1, // Add 1 for the buttons at the end
+        itemBuilder: (context, index) {
+          if (index == classes.length) {
+            // This is where you put the Create/Join buttons
+            return Padding(
+              padding: const EdgeInsets.only(top: 20.0),
+              child: Column(
+                children: [
+                  if (_userRole == 'instructor') _buildCreateClassButton(),
+                  if (_userRole == 'instructor') const SizedBox(height: 20),
+                  _buildJoinClassButton(),
+                ],
+              ),
+            );
+          }
+
+          final classDoc = classes[index];
+          final className = classDoc['className'] ?? 'Unnamed Class';
+          final instructorName = classDoc['instructorName'] ?? 'Unknown Instructor';
+          final classCode = classDoc['classCode'] ?? 'N/A';
+          final totalStudents = (classDoc['studentIds'] as List?)?.length ?? 0;
+
+          return Card(
+            elevation: 4,
+            margin: const EdgeInsets.only(bottom: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: InkWell(
+              onTap: () {
+                // Navigate to the class detail page
+                // You would implement this navigation
+                // Navigator.push(context, MaterialPageRoute(builder: (context) => ClassDetailPage(classId: classDoc.id)));
+              },
+              borderRadius: BorderRadius.circular(15),
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      className,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.deepPurple,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text('Instructor: $instructorName', style: const TextStyle(color: Colors.grey)),
+                    Text('Class Code: $classCode', style: const TextStyle(color: Colors.grey)),
+                    const SizedBox(height: 8),
+                    Text('$totalStudents students enrolled', style: const TextStyle(fontStyle: FontStyle.italic)),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
 
   Widget _buildCreateClassButton() {
     return Padding(
@@ -268,13 +357,15 @@ class _LandingPageState extends State<LandingPage> {
         child: Container(
           margin: const EdgeInsets.all(2),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).scaffoldBackgroundColor, // Use theme color
             borderRadius: BorderRadius.circular(30),
           ),
           child: Material(
             color: Colors.transparent,
             child: InkWell(
-              onTap: () {},
+              onTap: () {
+                // TODO: Implement navigation to Create Class page
+              },
               borderRadius: BorderRadius.circular(30),
               child: const Center(
                 child: Padding(
@@ -302,9 +393,11 @@ class _LandingPageState extends State<LandingPage> {
       child: SizedBox(
         width: double.infinity,
         child: ElevatedButton(
-          onPressed: () {},
+          onPressed: () {
+            // TODO: Implement navigation to Join Class page
+          },
           style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF0C1D54),
+            backgroundColor: Theme.of(context).colorScheme.primary,
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(vertical: 18),
             shape: RoundedRectangleBorder(
