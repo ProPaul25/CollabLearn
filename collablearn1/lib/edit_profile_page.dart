@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+// REMOVE: We no longer need firebase_storage
+// import 'package:firebase_storage/firebase_storage.dart'; 
 import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:typed_data';
+import 'dart:convert'; // ADD: Required for Base64 encoding
 
 class EditProfilePage extends StatefulWidget {
   const EditProfilePage({super.key});
@@ -24,10 +26,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
   final _lastNameController = TextEditingController();
   final _entryNoController = TextEditingController();
   String _userEmail = 'Loading...';
-  String? _profileImageUrl;
 
-  File? _pickedImageFile;
+  // We only need to store the image as bytes now
   Uint8List? _pickedImageBytes;
+  String? _existingImageBase64; // To hold the image string from Firestore
 
   @override
   void initState() {
@@ -54,7 +56,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
           _lastNameController.text = data['lastName'] ?? '';
           _entryNoController.text = data['entryNo'] ?? '';
           _userEmail = data['email'] ?? '';
-          _profileImageUrl = data['profileImageUrl'];
+          // Load the Base64 string from Firestore
+          _existingImageBase64 = data['profileImageBase64']; 
         });
       } else if (mounted) {
         setState(() {
@@ -66,77 +69,91 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
   Future<void> _pickImage() async {
     final ImagePicker picker = ImagePicker();
-    final XFile? pickedImage = await picker.pickImage(source: ImageSource.gallery, imageQuality: 75);
+    final XFile? pickedImage = await picker.pickImage(source: ImageSource.gallery, imageQuality: 50); // Reduced quality for smaller string
 
     if (pickedImage != null && mounted) {
-      if (kIsWeb) {
-        _pickedImageBytes = await pickedImage.readAsBytes();
-        _pickedImageFile = null;
-      } else {
-        _pickedImageFile = File(pickedImage.path);
-        _pickedImageBytes = null;
-      }
-      setState(() {});
+      // Read the image as bytes regardless of platform
+      final imageBytes = await pickedImage.readAsBytes();
+      setState(() {
+        _pickedImageBytes = imageBytes;
+      });
     }
   }
 
+  // THIS IS THE NEW, CORRECTED SAVE FUNCTION
   Future<void> _saveProfile() async {
-  if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+    setState(() => _isLoading = true);
 
-  setState(() => _isLoading = true);
-
-  try {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) throw Exception("User not logged in");
-
-    String? imageUrl = _profileImageUrl;
-
-    // Upload new image if picked
-    if (_pickedImageFile != null || _pickedImageBytes != null) {
-      final storageRef = FirebaseStorage.instance.ref().child('profile_images/${user.uid}.jpg');
-
-      UploadTask uploadTask;
-      if (kIsWeb && _pickedImageBytes != null) {
-        uploadTask = storageRef.putData(_pickedImageBytes!);
-      } else if (_pickedImageFile != null) {
-        uploadTask = storageRef.putFile(_pickedImageFile!);
-      } else {
-        throw Exception("No image selected");
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        throw Exception("User not found. Please log in again.");
       }
 
-      final snapshot = await uploadTask.whenComplete(() {});
-      imageUrl = await snapshot.ref.getDownloadURL();
-    }
+      // Prepare the data to be saved in Firestore
+      Map<String, dynamic> dataToUpdate = {
+        'firstName': _firstNameController.text.trim(),
+        'lastName': _lastNameController.text.trim(),
+        'entryNo': _entryNoController.text.trim(),
+        'email': _userEmail,
+      };
 
-    // Update Firestore
-    await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-      'firstName': _firstNameController.text.trim(),
-      'lastName': _lastNameController.text.trim(),
-      'entryNo': _entryNoController.text.trim(),
-      'email': user.email,
-      'profileImageUrl': imageUrl,
-    }, SetOptions(merge: true));
+      // If a new image was picked, convert it to a Base64 string and add it to our data map.
+      if (_pickedImageBytes != null) {
+        String base64Image = base64Encode(_pickedImageBytes!);
+        dataToUpdate['profileImageBase64'] = base64Image;
+      }
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Profile updated successfully')),
+      // Save the final map to Firestore.
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set(
+        dataToUpdate,
+        SetOptions(merge: true),
       );
-      Navigator.pop(context, true); // Pass flag back to refresh landing page
+
+      final newDisplayName = "${_firstNameController.text.trim()} ${_lastNameController.text.trim()}";
+      if (user.displayName != newDisplayName) {
+        await user.updateDisplayName(newDisplayName);
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Profile updated successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to update profile: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
-  } catch (e) {
-    debugPrint("Error saving profile: $e");
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Error: $e')),
-    );
-  } finally {
-    if (mounted) setState(() => _isLoading = false);
   }
-}
 
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    ImageProvider? profileImage;
+    if (_pickedImageBytes != null) {
+      profileImage = MemoryImage(_pickedImageBytes!);
+    } else if (_existingImageBase64 != null) {
+      profileImage = MemoryImage(base64Decode(_existingImageBase64!));
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Edit Profile'),
@@ -176,14 +193,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
                       child: CircleAvatar(
                         radius: 50,
                         backgroundColor: Colors.grey[200],
-                        backgroundImage: _pickedImageBytes != null
-                            ? MemoryImage(_pickedImageBytes!) as ImageProvider
-                            : (_pickedImageFile != null
-                                ? FileImage(_pickedImageFile!) as ImageProvider
-                                : (_profileImageUrl != null
-                                    ? NetworkImage(_profileImageUrl!) as ImageProvider
-                                    : null)),
-                        child: _pickedImageFile == null && _pickedImageBytes == null && _profileImageUrl == null
+                        backgroundImage: profileImage,
+                        child: profileImage == null
                             ? Icon(Icons.person, size: 60, color: Colors.grey[400])
                             : null,
                       ),
@@ -191,7 +202,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                     TextButton(
                       onPressed: _pickImage,
                       child: Text(
-                        _pickedImageFile == null && _pickedImageBytes == null && _profileImageUrl == null
+                        profileImage == null
                             ? 'Add Profile Picture'
                             : 'Change Profile Picture',
                         style: TextStyle(color: Theme.of(context).colorScheme.primary),
@@ -246,6 +257,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
     );
   }
 
+  // Helper methods are unchanged
   Widget _buildTextField({
     required TextEditingController controller,
     required String labelText,
