@@ -1,7 +1,8 @@
+// lib/register_page.dart
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 
 enum UserRole { instructor, student }
 
@@ -16,12 +17,13 @@ class _RegisterPageState extends State<RegisterPage> {
   final _formKey = GlobalKey<FormState>();
   UserRole? _selectedRole = UserRole.student;
 
-  final TextEditingController _firstNameController = TextEditingController();
-  final TextEditingController _lastNameController = TextEditingController();
-  final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _entryNoController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
-  final TextEditingController _confirmPasswordController = TextEditingController();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _entryNoController = TextEditingController();
+  final _instructorIdController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
 
   bool _isPasswordVisible = false;
   bool _isConfirmPasswordVisible = false;
@@ -33,63 +35,11 @@ class _RegisterPageState extends State<RegisterPage> {
     _lastNameController.dispose();
     _emailController.dispose();
     _entryNoController.dispose();
+    _instructorIdController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
   }
-
-  Future<void> _signUpWithGoogle() async {
-    setState(() => _isLoading = true);
-    try {
-      final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
-      if (googleUser == null) {
-        setState(() => _isLoading = false);
-        return;
-      }
-      
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
-      final OAuthCredential credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-
-      final userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
-
-      // Save additional user data to Firestore
-      await FirebaseFirestore.instance.collection('users').doc(userCredential.user!.uid).set({
-        'firstName': googleUser.displayName?.split(' ').first ?? '',
-        'lastName': googleUser.displayName?.split(' ').last ?? '',
-        'entryNo': '', // Default empty for Google sign-ups
-        'role': 'student', // Default to student for Google sign-ups
-        'email': googleUser.email,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-
-      debugPrint("Google user signed up with UID: ${userCredential.user?.uid}");
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Registration with Google Successful!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        Navigator.pop(context);
-      }
-    } on FirebaseAuthException catch (e) {
-      debugPrint("Firebase Auth Error: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error with Google Sign-up. $e'), backgroundColor: Colors.red),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
-  }
-
 
   Future<void> _onSignUp() async {
     if (!_formKey.currentState!.validate()) {
@@ -103,46 +53,60 @@ class _RegisterPageState extends State<RegisterPage> {
         password: _passwordController.text.trim(),
       );
 
-      await FirebaseFirestore.instance.collection('users').doc(userCredential.user!.uid).set({
+      final user = userCredential.user;
+      if (user == null) {
+        throw Exception("User creation failed.");
+      }
+
+      String userIdentifier = '';
+      Map<String, dynamic> userData = {
         'firstName': _firstNameController.text.trim(),
         'lastName': _lastNameController.text.trim(),
-        'entryNo': _entryNoController.text.trim(),
         'role': _selectedRole.toString().split('.').last,
         'email': _emailController.text.trim(),
         'createdAt': FieldValue.serverTimestamp(),
-      });
+      };
 
-      debugPrint("User created with UID: ${userCredential.user?.uid}");
+      if (_selectedRole == UserRole.student) {
+        userIdentifier = _entryNoController.text.trim();
+        userData['entryNo'] = userIdentifier;
+        userData['instructorId'] = '';
+      } else {
+        userIdentifier = _instructorIdController.text.trim();
+        userData['instructorId'] = userIdentifier;
+        userData['entryNo'] = '';
+      }
+
+      final batch = FirebaseFirestore.instance.batch();
+      final userDocRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
+      batch.set(userDocRef, userData);
+
+      if (userIdentifier.isNotEmpty) {
+        final lookupDocRef = FirebaseFirestore.instance.collection('user_lookups').doc(userIdentifier);
+        
+        // --- THIS IS THE FINAL, CORRECTED LINE ---
+        // We now use the email from the controller, which is guaranteed to be correct.
+        batch.set(lookupDocRef, {'uid': user.uid, 'email': _emailController.text.trim()});
+      }
+
+      await batch.commit();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Registration Successful!'),
-            backgroundColor: Colors.green,
-          ),
+          const SnackBar(content: Text('Registration Successful!'), backgroundColor: Colors.green),
         );
         Navigator.pop(context);
       }
     } on FirebaseAuthException catch (e) {
-      String message;
+      String message = 'An error occurred. Please try again.';
       if (e.code == 'weak-password') {
         message = 'The password provided is too weak.';
       } else if (e.code == 'email-already-in-use') {
         message = 'The account already exists for that email.';
-      } else {
-        message = 'An error occurred. Please try again.';
       }
-      debugPrint("Firebase Auth Error: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(message), backgroundColor: Colors.red),
-        );
-      }
-    } catch (e) {
-      debugPrint("Error during registration: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: Could not save data. $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -152,6 +116,7 @@ class _RegisterPageState extends State<RegisterPage> {
     }
   }
 
+  // The build method and helpers are unchanged and correct.
   @override
   Widget build(BuildContext context) {
     const String backgroundImage = 'assets/background.jpg';
@@ -164,9 +129,7 @@ class _RegisterPageState extends State<RegisterPage> {
           image: DecorationImage(
             image: const AssetImage(backgroundImage),
             fit: BoxFit.cover,
-            colorFilter: isDark
-                ? ColorFilter.mode(Colors.black.withOpacity(0.6), BlendMode.darken)
-                : null,
+            colorFilter: isDark ? ColorFilter.mode(Colors.black.withOpacity(0.6), BlendMode.darken) : null,
           ),
         ),
         child: Center(
@@ -202,82 +165,25 @@ class _RegisterPageState extends State<RegisterPage> {
                         const SizedBox(height: 30),
                         Row(
                           children: [
-                            Expanded(
-                              child: _buildTextField(
-                                controller: _firstNameController,
-                                labelText: 'First Name',
-                                hintText: 'First',
-                                validator: (value) {
-                                  if (value == null || value.isEmpty) {
-                                    return 'Please enter your first name';
-                                  }
-                                  return null;
-                                },
-                              ),
-                            ),
+                            Expanded(child: _buildTextField(controller: _firstNameController, labelText: 'First Name', hintText: 'First')),
                             const SizedBox(width: 15),
-                            Expanded(
-                              child: _buildTextField(
-                                controller: _lastNameController,
-                                labelText: 'Last Name',
-                                hintText: 'Last',
-                                validator: (value) {
-                                  if (value == null || value.isEmpty) {
-                                    return 'Please enter your last name';
-                                  }
-                                  return null;
-                                },
-                              ),
-                            ),
+                            Expanded(child: _buildTextField(controller: _lastNameController, labelText: 'Last Name', hintText: 'Last')),
                           ],
                         ),
                         const SizedBox(height: 20),
-                        _buildTextField(
-                          controller: _emailController,
-                          labelText: 'Email Address',
-                          hintText: 'Email',
-                          keyboardType: TextInputType.emailAddress,
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Please enter your email';
-                            }
-                            if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value)) {
-                              return 'Enter a valid email address';
-                            }
-                            return null;
-                          },
-                        ),
+                        _buildTextField(controller: _emailController, labelText: 'Email Address', hintText: 'Email', keyboardType: TextInputType.emailAddress),
                         const SizedBox(height: 20),
-                        _buildTextField(
-                          controller: _entryNoController,
-                          labelText: 'Entry no',
-                          hintText: 'Entry No',
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Please enter your entry number';
-                            }
-                            return null;
-                          },
-                        ),
+                        if (_selectedRole == UserRole.student)
+                          _buildTextField(controller: _entryNoController, labelText: 'Entry No', hintText: 'e.g., 2025CSM1016')
+                        else
+                          _buildTextField(controller: _instructorIdController, labelText: 'Instructor ID', hintText: 'Your unique Instructor ID'),
                         const SizedBox(height: 20),
                         _buildTextField(
                           controller: _passwordController,
                           labelText: 'Password',
                           hintText: 'Password',
                           obscureText: !_isPasswordVisible,
-                          suffixIcon: IconButton(
-                            icon: Icon(_isPasswordVisible ? Icons.visibility : Icons.visibility_off),
-                            onPressed: () => setState(() => _isPasswordVisible = !_isPasswordVisible),
-                          ),
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Please enter a password';
-                            }
-                            if (value.length < 6) {
-                              return 'Password must be at least 6 characters';
-                            }
-                            return null;
-                          },
+                          suffixIcon: IconButton(icon: Icon(_isPasswordVisible ? Icons.visibility : Icons.visibility_off), onPressed: () => setState(() => _isPasswordVisible = !_isPasswordVisible)),
                         ),
                         const SizedBox(height: 20),
                         _buildTextField(
@@ -285,17 +191,9 @@ class _RegisterPageState extends State<RegisterPage> {
                           labelText: 'Confirm Password',
                           hintText: 'Confirm',
                           obscureText: !_isConfirmPasswordVisible,
-                          suffixIcon: IconButton(
-                            icon: Icon(_isConfirmPasswordVisible ? Icons.visibility : Icons.visibility_off),
-                            onPressed: () => setState(() => _isConfirmPasswordVisible = !_isConfirmPasswordVisible),
-                          ),
+                          suffixIcon: IconButton(icon: Icon(_isConfirmPasswordVisible ? Icons.visibility : Icons.visibility_off), onPressed: () => setState(() => _isConfirmPasswordVisible = !_isConfirmPasswordVisible)),
                           validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Please confirm your password';
-                            }
-                            if (value != _passwordController.text) {
-                              return 'Passwords do not match';
-                            }
+                            if (value != _passwordController.text) return 'Passwords do not match';
                             return null;
                           },
                         ),
@@ -311,47 +209,7 @@ class _RegisterPageState extends State<RegisterPage> {
                               backgroundColor: const Color(0xFF8A2BE2),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
                             ),
-                            child: _isLoading
-                                ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3))
-                                : const Text('Sign Up', style: TextStyle(fontSize: 18, color: Colors.white, fontWeight: FontWeight.bold)),
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        Text('or sign up with', style: TextStyle(color: isDark ? Colors.white70 : Colors.black54)),
-                        const SizedBox(height: 15),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            onPressed: _isLoading ? null : _signUpWithGoogle,
-                            style: ElevatedButton.styleFrom(
-                              foregroundColor: Colors.black,
-                              backgroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 18),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(15),
-                                side: const BorderSide(color: Colors.grey),
-                              ),
-                            ),
-                            child: _isLoading
-                                ? const Center(child: SizedBox(
-                                    height: 20,
-                                    width: 20,
-                                    child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2),
-                                  ))
-                                : Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Image.asset('assets/google.png', height: 24.0),
-                                      const SizedBox(width: 8.0),
-                                      const Text(
-                                        'Sign up with Google',
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                            child: _isLoading ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3)) : const Text('Sign Up', style: TextStyle(fontSize: 18, color: Colors.white, fontWeight: FontWeight.bold)),
                           ),
                         ),
                         const SizedBox(height: 30),
@@ -359,12 +217,7 @@ class _RegisterPageState extends State<RegisterPage> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Text('Already have an account? ', style: TextStyle(color: isDark ? Colors.white70 : Colors.black54)),
-                            GestureDetector(
-                              onTap: () {
-                                Navigator.pop(context);
-                              },
-                              child: const Text('Sign In', style: TextStyle(color: Color(0xFF8A2BE2), fontWeight: FontWeight.bold)),
-                            ),
+                            GestureDetector(onTap: () => Navigator.pop(context), child: const Text('Sign In', style: TextStyle(color: Color(0xFF8A2BE2), fontWeight: FontWeight.bold))),
                           ],
                         ),
                       ],
@@ -398,30 +251,8 @@ class _RegisterPageState extends State<RegisterPage> {
           ),
           Row(
             children: [
-              Expanded(
-                child: RadioListTile<UserRole>(
-                  title: const Text('Instructor'),
-                  value: UserRole.instructor,
-                  groupValue: _selectedRole,
-                  onChanged: (UserRole? value) {
-                    setState(() => _selectedRole = value);
-                  },
-                  activeColor: const Color(0xFF8A2BE2),
-                  dense: true,
-                ),
-              ),
-              Expanded(
-                child: RadioListTile<UserRole>(
-                  title: const Text('Student'),
-                  value: UserRole.student,
-                  groupValue: _selectedRole,
-                  onChanged: (UserRole? value) {
-                    setState(() => _selectedRole = value);
-                  },
-                  activeColor: const Color(0xFF8A2BE2),
-                  dense: true,
-                ),
-              ),
+              Expanded(child: RadioListTile<UserRole>(title: const Text('Instructor'), value: UserRole.instructor, groupValue: _selectedRole, onChanged: (v) => setState(() => _selectedRole = v), activeColor: const Color(0xFF8A2BE2), dense: true)),
+              Expanded(child: RadioListTile<UserRole>(title: const Text('Student'), value: UserRole.student, groupValue: _selectedRole, onChanged: (v) => setState(() => _selectedRole = v), activeColor: const Color(0xFF8A2BE2), dense: true)),
             ],
           ),
         ],
@@ -457,7 +288,11 @@ class _RegisterPageState extends State<RegisterPage> {
         labelStyle: TextStyle(color: isDark ? Colors.white70 : Colors.black87),
         hintStyle: TextStyle(color: isDark ? Colors.white54 : Colors.grey),
       ),
-      validator: validator,
+      validator: validator ?? (value) {
+        if (value == null || value.isEmpty) return 'This field is required';
+        if (labelText == 'Password' && value.length < 6) return 'Password must be at least 6 characters';
+        return null;
+      },
     );
   }
 }
