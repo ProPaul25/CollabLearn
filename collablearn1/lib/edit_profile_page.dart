@@ -4,12 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
-// REMOVE: We no longer need firebase_storage
-// import 'package:firebase_storage/firebase_storage.dart'; 
 import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:typed_data';
-import 'dart:convert'; // ADD: Required for Base64 encoding
+import 'dart:convert';
 
 class EditProfilePage extends StatefulWidget {
   const EditProfilePage({super.key});
@@ -25,11 +23,18 @@ class _EditProfilePageState extends State<EditProfilePage> {
   final _firstNameController = TextEditingController();
   final _lastNameController = TextEditingController();
   final _entryNoController = TextEditingController();
-  String _userEmail = 'Loading...';
+  // NEW: Controller for the editable email field
+  final _emailController = TextEditingController(); 
 
-  // We only need to store the image as bytes now
+  final _newPasswordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
+
+  bool _isPasswordSectionVisible = false;
+  bool _isNewPasswordVisible = false;
+  bool _isConfirmNewPasswordVisible = false;
+
   Uint8List? _pickedImageBytes;
-  String? _existingImageBase64; // To hold the image string from Firestore
+  String? _existingImageBase64;
 
   @override
   void initState() {
@@ -42,6 +47,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
     _firstNameController.dispose();
     _lastNameController.dispose();
     _entryNoController.dispose();
+    _emailController.dispose(); // NEW: Dispose email controller
+    _newPasswordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
   }
 
@@ -55,13 +63,12 @@ class _EditProfilePageState extends State<EditProfilePage> {
           _firstNameController.text = data['firstName'] ?? '';
           _lastNameController.text = data['lastName'] ?? '';
           _entryNoController.text = data['entryNo'] ?? '';
-          _userEmail = data['email'] ?? '';
-          // Load the Base64 string from Firestore
-          _existingImageBase64 = data['profileImageBase64']; 
+          _emailController.text = data['email'] ?? user.email ?? ''; // NEW: Populate email controller
+          _existingImageBase64 = data['profileImageBase64'];
         });
       } else if (mounted) {
         setState(() {
-          _userEmail = user.email ?? '';
+          _emailController.text = user.email ?? '';
         });
       }
     }
@@ -69,10 +76,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
   Future<void> _pickImage() async {
     final ImagePicker picker = ImagePicker();
-    final XFile? pickedImage = await picker.pickImage(source: ImageSource.gallery, imageQuality: 50); // Reduced quality for smaller string
+    final XFile? pickedImage = await picker.pickImage(source: ImageSource.gallery, imageQuality: 50);
 
     if (pickedImage != null && mounted) {
-      // Read the image as bytes regardless of platform
       final imageBytes = await pickedImage.readAsBytes();
       setState(() {
         _pickedImageBytes = imageBytes;
@@ -80,34 +86,69 @@ class _EditProfilePageState extends State<EditProfilePage> {
     }
   }
 
-  // THIS IS THE NEW, CORRECTED SAVE FUNCTION
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
     setState(() => _isLoading = true);
 
+    String originalEmail = '';
+
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
         throw Exception("User not found. Please log in again.");
       }
+      originalEmail = user.email ?? '';
 
-      // Prepare the data to be saved in Firestore
+      // --- NEW: EMAIL UPDATE LOGIC ---
+      final newEmail = _emailController.text.trim();
+      bool emailChanged = newEmail != originalEmail;
+      if (emailChanged) {
+        try {
+          // This sends a verification link to the new email.
+          await user.verifyBeforeUpdateEmail(newEmail);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Verification link sent to new email. Please verify to complete the change.'),
+                backgroundColor: Colors.blue,
+              ),
+            );
+          }
+        } on FirebaseAuthException catch (e) {
+          if (e.code == 'requires-recent-login') {
+            throw Exception('This operation is sensitive and requires recent authentication. Please log out and log back in to change your email.');
+          } else if (e.code == 'email-already-in-use') {
+            throw Exception('This email is already in use by another account.');
+          }
+          throw Exception('Failed to update email: ${e.message}');
+        }
+      }
+
+      if (_isPasswordSectionVisible && _newPasswordController.text.isNotEmpty) {
+        try {
+          await user.updatePassword(_newPasswordController.text.trim());
+        } on FirebaseAuthException catch (e) {
+          if (e.code == 'requires-recent-login') {
+            throw Exception('This operation is sensitive and requires recent authentication. Please log out and log back in to change your password.');
+          }
+          throw Exception('Failed to update password: ${e.message}');
+        }
+      }
+
       Map<String, dynamic> dataToUpdate = {
         'firstName': _firstNameController.text.trim(),
         'lastName': _lastNameController.text.trim(),
         'entryNo': _entryNoController.text.trim(),
-        'email': _userEmail,
+        'email': newEmail, // Save the new email to Firestore
       };
 
-      // If a new image was picked, convert it to a Base64 string and add it to our data map.
       if (_pickedImageBytes != null) {
         String base64Image = base64Encode(_pickedImageBytes!);
         dataToUpdate['profileImageBase64'] = base64Image;
       }
 
-      // Save the final map to Firestore.
       await FirebaseFirestore.instance.collection('users').doc(user.uid).set(
         dataToUpdate,
         SetOptions(merge: true),
@@ -131,7 +172,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to update profile: $e'),
+            content: Text('Error: ${e.toString().replaceFirst("Exception: ", "")}'),
             backgroundColor: Colors.red,
           ),
         );
@@ -142,7 +183,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
       }
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -227,10 +267,80 @@ class _EditProfilePageState extends State<EditProfilePage> {
                       hintText: 'Enter your entry number',
                     ),
                     const SizedBox(height: 20),
-                    _buildReadOnlyField(
+
+                    // --- NEW: Editable Email Field ---
+                    _buildTextField(
+                      controller: _emailController,
                       labelText: 'Email Address',
-                      value: _userEmail,
+                      hintText: 'Enter your email address',
+                      keyboardType: TextInputType.emailAddress,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Email cannot be empty';
+                        }
+                        if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value)) {
+                          return 'Please enter a valid email address';
+                        }
+                        return null;
+                      },
                     ),
+                    const SizedBox(height: 10),
+
+                    TextButton(
+                      onPressed: () {
+                        setState(() {
+                          _isPasswordSectionVisible = !_isPasswordSectionVisible;
+                        });
+                      },
+                      child: Text(
+                        _isPasswordSectionVisible ? 'Cancel Password Change' : 'Change Password',
+                        style: TextStyle(color: _isPasswordSectionVisible ? Colors.red : Theme.of(context).colorScheme.primary),
+                      ),
+                    ),
+
+                    if (_isPasswordSectionVisible)
+                      Column(
+                        children: [
+                          const SizedBox(height: 10),
+                          _buildTextField(
+                            controller: _newPasswordController,
+                            labelText: 'New Password',
+                            hintText: 'Enter new password',
+                            isPassword: true,
+                            isPasswordVisible: _isNewPasswordVisible,
+                            onVisibilityToggle: () {
+                              setState(() {
+                                _isNewPasswordVisible = !_isNewPasswordVisible;
+                              });
+                            },
+                            validator: (value) {
+                              if (value != null && value.isNotEmpty && value.length < 6) {
+                                return 'Password must be at least 6 characters';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 20),
+                          _buildTextField(
+                            controller: _confirmPasswordController,
+                            labelText: 'Confirm New Password',
+                            hintText: 'Re-enter new password',
+                            isPassword: true,
+                            isPasswordVisible: _isConfirmNewPasswordVisible,
+                            onVisibilityToggle: () {
+                              setState(() {
+                                _isConfirmNewPasswordVisible = !_isConfirmNewPasswordVisible;
+                              });
+                            },
+                            validator: (value) {
+                              if (_newPasswordController.text.isNotEmpty && value != _newPasswordController.text) {
+                                return 'Passwords do not match';
+                              }
+                              return null;
+                            },
+                          ),
+                        ],
+                      ),
                     const SizedBox(height: 40),
                     SizedBox(
                       width: double.infinity,
@@ -257,54 +367,43 @@ class _EditProfilePageState extends State<EditProfilePage> {
     );
   }
 
-  // Helper methods are unchanged
   Widget _buildTextField({
     required TextEditingController controller,
     required String labelText,
     required String hintText,
+    TextInputType keyboardType = TextInputType.text,
+    bool isPassword = false,
+    bool isPasswordVisible = false,
+    VoidCallback? onVisibilityToggle,
+    String? Function(String?)? validator,
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return TextFormField(
       controller: controller,
+      keyboardType: keyboardType,
+      obscureText: isPassword && !isPasswordVisible,
       decoration: InputDecoration(
         labelText: labelText,
         hintText: hintText,
         filled: true,
         fillColor: isDark ? const Color(0xFF2A314D) : const Color(0xFFF0F0F0),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+        suffixIcon: isPassword
+            ? IconButton(
+                icon: Icon(
+                  isPasswordVisible ? Icons.visibility : Icons.visibility_off,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                onPressed: onVisibilityToggle,
+              )
+            : null,
       ),
-      validator: (value) {
+      validator: validator ?? (value) {
         if (value == null || value.isEmpty) {
           return 'This field cannot be empty';
         }
         return null;
       },
-    );
-  }
-
-  Widget _buildReadOnlyField({required String labelText, required String value}) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          labelText,
-          style: TextStyle(color: Colors.grey[600], fontSize: 12),
-        ),
-        const SizedBox(height: 8),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-          decoration: BoxDecoration(
-            color: isDark ? Colors.black26 : Colors.grey[200],
-            borderRadius: BorderRadius.circular(15),
-          ),
-          child: Text(
-            value,
-            style: TextStyle(fontSize: 16, color: isDark ? Colors.white70 : Colors.black54),
-          ),
-        ),
-      ],
     );
   }
 }
