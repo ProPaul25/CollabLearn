@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:collablearn1/edit_profile_page.dart';
 import 'package:collablearn1/join_class_page.dart';
+import 'package:collablearn1/create_class_page.dart'; // NEW IMPORT
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -102,7 +103,11 @@ class _LandingPageState extends State<LandingPage> {
     if (_userRole == 'instructor') {
       return [
         ListTile(leading: const Icon(Icons.class_outlined), title: const Text('My Classes'), onTap: () => Navigator.pop(context)),
-        ListTile(leading: const Icon(Icons.add_box_outlined), title: const Text('Create Class'), onTap: () => Navigator.pop(context)),
+        // UPDATED: Navigate to CreateClassPage
+        ListTile(leading: const Icon(Icons.add_box_outlined), title: const Text('Create Class'), onTap: () {
+          Navigator.pop(context); // Close the drawer
+          Navigator.push(context, MaterialPageRoute(builder: (context) => const CreateClassPage()));
+        }),
         ListTile(leading: const Icon(Icons.people_alt_outlined), title: const Text('Student Management'), onTap: () => Navigator.pop(context)),
       ];
     } else { // Student
@@ -370,7 +375,10 @@ class _LandingPageState extends State<LandingPage> {
           child: Material(
             color: Colors.transparent,
             child: InkWell(
-              onTap: () {},
+              onTap: () {
+                // UPDATED: Navigate to CreateClassPage
+                Navigator.push(context, MaterialPageRoute(builder: (context) => const CreateClassPage()));
+              },
               borderRadius: BorderRadius.circular(30),
               child: const Center(
                 child: Padding(
