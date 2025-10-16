@@ -5,8 +5,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:collablearn1/edit_profile_page.dart';
-import 'dart:convert'; // ADD: Required for Base64 decoding
-import 'dart:typed_data'; // ADD: Required for Uint8List
+import 'package:collablearn1/join_class_page.dart';
+import 'dart:convert';
+import 'dart:typed_data';
 
 class LandingPage extends StatefulWidget {
   final VoidCallback onToggleTheme;
@@ -26,7 +27,7 @@ class _LandingPageState extends State<LandingPage> {
   String _userName = "User";
   String _userEmail = "";
   String _userRole = "";
-  Uint8List? _profileImageBytes; // Store the image as decoded bytes
+  Uint8List? _profileImageBytes;
 
   @override
   void initState() {
@@ -37,7 +38,8 @@ class _LandingPageState extends State<LandingPage> {
   Future<void> _loadUserData() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      final userDoc =
+          await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
       if (userDoc.exists) {
         final data = userDoc.data();
         if (data != null && mounted) {
@@ -45,8 +47,7 @@ class _LandingPageState extends State<LandingPage> {
             _userName = "${data['firstName'] ?? ''} ${data['lastName'] ?? ''}";
             _userEmail = data['email'] ?? user.email ?? '';
             _userRole = data['role'] ?? 'student';
-            
-            // Decode the Base64 string into image bytes
+
             String? imageBase64 = data['profileImageBase64'];
             if (imageBase64 != null && imageBase64.isNotEmpty) {
               _profileImageBytes = base64Decode(imageBase64);
@@ -69,6 +70,120 @@ class _LandingPageState extends State<LandingPage> {
   Future<void> _logout() async {
     await FirebaseAuth.instance.signOut();
     await GoogleSignIn().signOut();
+  }
+
+  Widget _buildDummyListTile({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      leading: Icon(icon, color: Theme.of(context).colorScheme.primary),
+      title: Text(title, style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
+      onTap: () {
+        onTap();
+      },
+    );
+  }
+
+  Widget _buildDrawerHeader() {
+    return UserAccountsDrawerHeader(
+      accountName: Text(
+        _userName,
+        style: const TextStyle(fontWeight: FontWeight.bold),
+      ),
+      accountEmail: Text(_userEmail),
+      currentAccountPicture: CircleAvatar(
+        backgroundColor: Colors.white,
+        backgroundImage: _profileImageBytes != null
+            ? MemoryImage(_profileImageBytes!)
+            : null,
+        child: _profileImageBytes == null
+            ? const Icon(Icons.person, size: 40, color: Colors.grey)
+            : null,
+      ),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.primary,
+      ),
+    );
+  }
+
+  // MODIFIED: Return List<Widget> instead of a Column
+  List<Widget> _buildInstructorMenuItems(BuildContext context) {
+    return [
+      _buildDummyListTile(
+        icon: Icons.class_outlined,
+        title: 'My Classes',
+        onTap: () {
+          Navigator.pop(context);
+        },
+      ),
+      _buildDummyListTile(
+        icon: Icons.add_box_outlined,
+        title: 'Create Class',
+        onTap: () {
+          Navigator.pop(context);
+        },
+      ),
+      _buildDummyListTile(
+        icon: Icons.people_alt_outlined,
+        title: 'Student Management',
+        onTap: () {
+          Navigator.pop(context);
+        },
+      ),
+    ];
+  }
+
+  // MODIFIED: Return List<Widget> instead of a Column
+  List<Widget> _buildStudentMenuItems(BuildContext context) {
+    return [
+      _buildDummyListTile(
+        icon: Icons.class_outlined,
+        title: 'My Classes',
+        onTap: () {
+          Navigator.pop(context);
+        },
+      ),
+      _buildDummyListTile(
+        icon: Icons.person_add_alt_1_outlined,
+        title: 'Join Class',
+        onTap: () {
+          Navigator.pop(context);
+        },
+      ),
+    ];
+  }
+
+  // MODIFIED: Return List<Widget> instead of a Column
+  List<Widget> _buildFooter(BuildContext context) {
+    return [
+      const Divider(),
+      _buildDummyListTile(
+        icon: Icons.edit_note,
+        title: 'Edit Profile',
+        onTap: () {
+          Navigator.pop(context);
+        },
+      ),
+      _buildDummyListTile(
+        icon: widget.isDarkMode ? Icons.light_mode : Icons.dark_mode,
+        title: 'Toggle Theme',
+        onTap: () {
+          widget.onToggleTheme();
+          Navigator.pop(context);
+        },
+      ),
+      const Divider(),
+      _buildDummyListTile(
+        icon: Icons.logout,
+        title: 'Sign Out',
+        onTap: () {
+          _logout();
+          Navigator.pop(context);
+        },
+      ),
+    ];
   }
 
   @override
@@ -95,7 +210,21 @@ class _LandingPageState extends State<LandingPage> {
           ),
         ],
       ),
-      drawer: const Drawer(),
+      drawer: Drawer(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: <Widget>[
+            _buildDrawerHeader(),
+            // CORRECTED: Use the spread operator directly on the List<Widget> returned by the methods
+            if (_userRole == 'instructor')
+              ..._buildInstructorMenuItems(context)
+            else
+              ..._buildStudentMenuItems(context),
+            const Divider(),
+            ..._buildFooter(context)
+          ],
+        ),
+      ),
       body: Column(
         children: [
           Expanded(
@@ -131,7 +260,7 @@ class _LandingPageState extends State<LandingPage> {
                   topRight: Radius.circular(40.0),
                 ),
               ),
-              child: _buildNoClassesView(), // Simplified for clarity, you can add your StreamBuilder back
+              child: _buildNoClassesView(),
             ),
           ),
         ],
@@ -179,7 +308,6 @@ class _LandingPageState extends State<LandingPage> {
                   CircleAvatar(
                     radius: 35,
                     backgroundColor: Colors.grey[200],
-                    // Use MemoryImage to display the decoded bytes
                     backgroundImage: _profileImageBytes != null
                         ? MemoryImage(_profileImageBytes!)
                         : null,
@@ -282,8 +410,7 @@ class _LandingPageState extends State<LandingPage> {
   }
 
   Widget _buildCreateClassButton() {
-    // ... code for this button is unchanged
-     return Padding(
+    return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 40),
       child: Container(
         decoration: BoxDecoration(
@@ -322,13 +449,14 @@ class _LandingPageState extends State<LandingPage> {
   }
 
   Widget _buildJoinClassButton() {
-    // ... code for this button is unchanged
-     return Padding(
+    return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 40),
       child: SizedBox(
         width: double.infinity,
         child: ElevatedButton(
-          onPressed: () {},
+          onPressed: () {
+            Navigator.push(context, MaterialPageRoute(builder: (context) => const JoinClassPage()));
+          },
           style: ElevatedButton.styleFrom(
             backgroundColor: Theme.of(context).colorScheme.primary,
             foregroundColor: Colors.white,
