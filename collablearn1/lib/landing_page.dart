@@ -38,14 +38,17 @@ class _LandingPageState extends State<LandingPage> {
   Future<void> _loadUserData() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      final userDoc =
-          await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      // We need to re-fetch the user data in case it was updated
+      await user.reload(); 
+      final refreshedUser = FirebaseAuth.instance.currentUser;
+
+      final userDoc = await FirebaseFirestore.instance.collection('users').doc(refreshedUser!.uid).get();
       if (userDoc.exists) {
         final data = userDoc.data();
         if (data != null && mounted) {
           setState(() {
             _userName = "${data['firstName'] ?? ''} ${data['lastName'] ?? ''}";
-            _userEmail = data['email'] ?? user.email ?? '';
+            _userEmail = refreshedUser.email ?? data['email'] ?? ''; // Prioritize fresh email from Auth
             _userRole = data['role'] ?? 'student';
 
             String? imageBase64 = data['profileImageBase64'];
@@ -58,8 +61,8 @@ class _LandingPageState extends State<LandingPage> {
         }
       } else if (mounted) {
         setState(() {
-          _userName = user.displayName ?? "User";
-          _userEmail = user.email ?? "";
+          _userName = refreshedUser.displayName ?? "User";
+          _userEmail = refreshedUser.email ?? "";
           _userRole = "student";
           _profileImageBytes = null;
         });
@@ -72,25 +75,12 @@ class _LandingPageState extends State<LandingPage> {
     await GoogleSignIn().signOut();
   }
 
-  Widget _buildDummyListTile({
-    required IconData icon,
-    required String title,
-    required VoidCallback onTap,
-  }) {
-    return ListTile(
-      leading: Icon(icon, color: Theme.of(context).colorScheme.primary),
-      title: Text(title, style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
-      onTap: () {
-        onTap();
-      },
-    );
-  }
-
+  // --- NAVIGATION DRAWER METHODS ---
   Widget _buildDrawerHeader() {
     return UserAccountsDrawerHeader(
       accountName: Text(
         _userName,
-        style: const TextStyle(fontWeight: FontWeight.bold),
+        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
       ),
       accountEmail: Text(_userEmail),
       currentAccountPicture: CircleAvatar(
@@ -108,91 +98,33 @@ class _LandingPageState extends State<LandingPage> {
     );
   }
 
-  // MODIFIED: Return List<Widget> instead of a Column
-  List<Widget> _buildInstructorMenuItems(BuildContext context) {
-    return [
-      _buildDummyListTile(
-        icon: Icons.class_outlined,
-        title: 'My Classes',
-        onTap: () {
-          Navigator.pop(context);
-        },
-      ),
-      _buildDummyListTile(
-        icon: Icons.add_box_outlined,
-        title: 'Create Class',
-        onTap: () {
-          Navigator.pop(context);
-        },
-      ),
-      _buildDummyListTile(
-        icon: Icons.people_alt_outlined,
-        title: 'Student Management',
-        onTap: () {
-          Navigator.pop(context);
-        },
-      ),
-    ];
+  List<Widget> _buildMenuItems() {
+    if (_userRole == 'instructor') {
+      return [
+        ListTile(leading: const Icon(Icons.class_outlined), title: const Text('My Classes'), onTap: () => Navigator.pop(context)),
+        ListTile(leading: const Icon(Icons.add_box_outlined), title: const Text('Create Class'), onTap: () => Navigator.pop(context)),
+        ListTile(leading: const Icon(Icons.people_alt_outlined), title: const Text('Student Management'), onTap: () => Navigator.pop(context)),
+      ];
+    } else { // Student
+      return [
+        ListTile(leading: const Icon(Icons.class_outlined), title: const Text('My Classes'), onTap: () => Navigator.pop(context)),
+        ListTile(leading: const Icon(Icons.person_add_alt_1_outlined), title: const Text('Join Class'), onTap: () {
+          Navigator.pop(context); // Close the drawer first
+          Navigator.push(context, MaterialPageRoute(builder: (context) => const JoinClassPage()));
+        }),
+      ];
+    }
   }
-
-  // MODIFIED: Return List<Widget> instead of a Column
-  List<Widget> _buildStudentMenuItems(BuildContext context) {
-    return [
-      _buildDummyListTile(
-        icon: Icons.class_outlined,
-        title: 'My Classes',
-        onTap: () {
-          Navigator.pop(context);
-        },
-      ),
-      _buildDummyListTile(
-        icon: Icons.person_add_alt_1_outlined,
-        title: 'Join Class',
-        onTap: () {
-          Navigator.pop(context);
-        },
-      ),
-    ];
-  }
-
-  // MODIFIED: Return List<Widget> instead of a Column
-  List<Widget> _buildFooter(BuildContext context) {
-    return [
-      const Divider(),
-      _buildDummyListTile(
-        icon: Icons.edit_note,
-        title: 'Edit Profile',
-        onTap: () {
-          Navigator.pop(context);
-        },
-      ),
-      _buildDummyListTile(
-        icon: widget.isDarkMode ? Icons.light_mode : Icons.dark_mode,
-        title: 'Toggle Theme',
-        onTap: () {
-          widget.onToggleTheme();
-          Navigator.pop(context);
-        },
-      ),
-      const Divider(),
-      _buildDummyListTile(
-        icon: Icons.logout,
-        title: 'Sign Out',
-        onTap: () {
-          _logout();
-          Navigator.pop(context);
-        },
-      ),
-    ];
-  }
+  // --- END OF NAVIGATION DRAWER METHODS ---
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('HOME'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
+        // AppBar is now opaque for a cleaner look
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor, 
+        elevation: 1, // Add a slight shadow
         actions: [
           IconButton(
             icon: Icon(
@@ -210,21 +142,51 @@ class _LandingPageState extends State<LandingPage> {
           ),
         ],
       ),
+      // The Drawer now builds its content based on the user's role
       drawer: Drawer(
         child: ListView(
           padding: EdgeInsets.zero,
           children: <Widget>[
             _buildDrawerHeader(),
-            // CORRECTED: Use the spread operator directly on the List<Widget> returned by the methods
-            if (_userRole == 'instructor')
-              ..._buildInstructorMenuItems(context)
-            else
-              ..._buildStudentMenuItems(context),
+            ..._buildMenuItems(),
             const Divider(),
-            ..._buildFooter(context)
+            // CHANGE 1: Edit Profile is now a functional button in the drawer
+            ListTile(
+              leading: const Icon(Icons.edit_note),
+              title: const Text('Edit Profile'),
+              onTap: () {
+                Navigator.pop(context); // Close the drawer
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const EditProfilePage()),
+                ).then((_) {
+                  // This is called when we return from the EditProfilePage.
+                  // It refreshes the user's data to show any changes.
+                  _loadUserData();
+                });
+              },
+            ),
+            ListTile(
+              leading: Icon(widget.isDarkMode ? Icons.light_mode : Icons.dark_mode),
+              title: const Text('Toggle Theme'),
+              onTap: () {
+                widget.onToggleTheme();
+                Navigator.pop(context);
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.red),
+              title: const Text('Sign Out', style: TextStyle(color: Colors.red)),
+              onTap: () {
+                _logout();
+                Navigator.pop(context);
+              },
+            ),
           ],
         ),
       ),
+      // The body of the Scaffold remains the same
       body: Column(
         children: [
           Expanded(
@@ -317,51 +279,33 @@ class _LandingPageState extends State<LandingPage> {
                   ),
                   const SizedBox(width: 16),
                   Expanded(
-                    child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _userName,
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // CHANGE 2 & 3: Removed the "Edit Profile" link and adjusted text sizes
+                        Text(
+                          _userName,
+                          style: const TextStyle(
+                            fontSize: 20, // Increased for prominence
+                            fontWeight: FontWeight.bold,
                           ),
-                          Text(
-                            _userEmail,
-                            style: const TextStyle(color: Colors.grey),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _userEmail,
+                          style: const TextStyle(color: Colors.grey, fontSize: 14),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _userRole,
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 14,
+                            fontStyle: FontStyle.italic
                           ),
-                          Text(
-                            _userRole,
-                            style: const TextStyle(color: Colors.grey),
-                          ),
-                          const SizedBox(height: 4),
-                          InkWell(
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (context) => const EditProfilePage()),
-                              ).then((_) {
-                                _loadUserData();
-                              });
-                            },
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  'Edit Profile',
-                                  style: TextStyle(
-                                    color: Colors.pink,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                Icon(Icons.arrow_forward_ios, color: Colors.pink, size: 14),
-                              ],
-                            ),
-                          )
-                        ],
-                      ),
+                        ),
+                        // The InkWell for "Edit Profile" has been removed from here.
+                      ],
                     ),
                   ),
                   const Align(
