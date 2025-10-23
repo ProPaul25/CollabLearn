@@ -7,7 +7,8 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:collablearn1/edit_profile_page.dart';
 import 'package:collablearn1/join_class_page.dart';
 import 'package:collablearn1/create_class_page.dart'; 
-import 'package:collablearn1/course_dashboard_page.dart'; // NEW IMPORT
+import 'package:collablearn1/course_dashboard_page.dart';
+import 'package:collablearn1/user_progress_tracker_page.dart'; // NEW IMPORT for Dashboard
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -31,7 +32,7 @@ class _LandingPageState extends State<LandingPage> {
   String _userRole = "";
   Uint8List? _profileImageBytes;
   
-  // --- NEW STATE VARIABLES ---
+  // --- STATE VARIABLES for Classes ---
   List<Map<String, dynamic>> _enrolledClasses = [];
   bool _isClassesLoading = true;
   // -------------------------
@@ -40,13 +41,12 @@ class _LandingPageState extends State<LandingPage> {
   void initState() {
     super.initState();
     _loadUserData();
-    // We fetch classes inside _loadUserData after confirming user exists
+    // Classes are fetched inside _loadUserData after profile is confirmed
   }
 
   Future<void> _loadUserData() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      // We need to re-fetch the user data in case it was updated
       await user.reload(); 
       final refreshedUser = FirebaseAuth.instance.currentUser;
 
@@ -56,7 +56,7 @@ class _LandingPageState extends State<LandingPage> {
         if (data != null && mounted) {
           setState(() {
             _userName = "${data['firstName'] ?? ''} ${data['lastName'] ?? ''}";
-            _userEmail = refreshedUser.email ?? data['email'] ?? ''; // Prioritize fresh email from Auth
+            _userEmail = refreshedUser.email ?? data['email'] ?? ''; 
             _userRole = data['role'] ?? 'student';
 
             String? imageBase64 = data['profileImageBase64'];
@@ -67,7 +67,7 @@ class _LandingPageState extends State<LandingPage> {
             }
           });
           // Call class fetch after profile data is loaded
-          _fetchEnrolledClasses(data['enrolledClasses'] ?? []); 
+          _fetchEnrolledClasses(List<dynamic>.from(data['enrolledClasses'] ?? [])); 
         }
       } else if (mounted) {
         setState(() {
@@ -81,7 +81,7 @@ class _LandingPageState extends State<LandingPage> {
     }
   }
 
-  // --- NEW METHOD TO FETCH CLASSES ---
+  // --- METHOD TO FETCH CLASSES ---
   Future<void> _fetchEnrolledClasses(List<dynamic> classIds) async {
     if (classIds.isEmpty) {
       if (mounted) setState(() => _isClassesLoading = false);
@@ -89,8 +89,10 @@ class _LandingPageState extends State<LandingPage> {
     }
 
     try {
+      // Set loading state before query
+      if (mounted) setState(() => _isClassesLoading = true); 
+
       // Fetch class details for all IDs using an 'whereIn' query
-      // Note: Firestore 'whereIn' is limited to 10 items per query
       final classesSnapshot = await FirebaseFirestore.instance
           .collection('classes')
           .where(FieldPath.documentId, whereIn: classIds)
@@ -143,25 +145,23 @@ class _LandingPageState extends State<LandingPage> {
   }
 
   List<Widget> _buildMenuItems() {
+    // Instructor Menu
     if (_userRole == 'instructor') {
       return [
-        ListTile(leading: const Icon(Icons.class_outlined), title: const Text('My Classes'), onTap: () {
-           Navigator.pop(context); // Close the drawer
-           // If the instructor has classes, we should stay here.
-        }),
+        ListTile(leading: const Icon(Icons.class_outlined), title: const Text('My Classes'), onTap: () => Navigator.pop(context)),
         ListTile(leading: const Icon(Icons.add_box_outlined), title: const Text('Create Class'), onTap: () {
-          Navigator.pop(context); // Close the drawer
+          Navigator.pop(context); 
           Navigator.push(context, MaterialPageRoute(builder: (context) => const CreateClassPage())).then((_) {
             _loadUserData(); // Reload data when returning
           });
         }),
         ListTile(leading: const Icon(Icons.people_alt_outlined), title: const Text('Student Management'), onTap: () => Navigator.pop(context)),
       ];
-    } else { // Student
+    } else { // Student Menu
       return [
         ListTile(leading: const Icon(Icons.class_outlined), title: const Text('My Classes'), onTap: () => Navigator.pop(context)),
         ListTile(leading: const Icon(Icons.person_add_alt_1_outlined), title: const Text('Join Class'), onTap: () {
-          Navigator.pop(context); // Close the drawer first
+          Navigator.pop(context); 
           Navigator.push(context, MaterialPageRoute(builder: (context) => const JoinClassPage())).then((_) {
             _loadUserData(); // Reload data when returning
           });
@@ -195,7 +195,6 @@ class _LandingPageState extends State<LandingPage> {
           ),
         ],
       ),
-      // The Drawer now builds its content based on the user's role
       drawer: Drawer(
         child: ListView(
           padding: EdgeInsets.zero,
@@ -203,16 +202,27 @@ class _LandingPageState extends State<LandingPage> {
             _buildDrawerHeader(),
             ..._buildMenuItems(),
             const Divider(),
+            // NEW: Performance Report access
+            ListTile(
+              leading: const Icon(Icons.show_chart), 
+              title: const Text('Performance Report'),
+              onTap: () {
+                Navigator.pop(context); 
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const UserProgressTrackerPage()),
+                );
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.edit_note),
               title: const Text('Edit Profile'),
               onTap: () {
-                Navigator.pop(context); // Close the drawer
+                Navigator.pop(context); 
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => const EditProfilePage()),
                 ).then((_) {
-                  // This is called when we return from the EditProfilePage.
                   _loadUserData();
                 });
               },
@@ -237,7 +247,6 @@ class _LandingPageState extends State<LandingPage> {
           ],
         ),
       ),
-      // The body of the Scaffold now displays class list
       body: Column(
         children: [
           Expanded(
@@ -283,7 +292,6 @@ class _LandingPageState extends State<LandingPage> {
   }
 
   Widget _buildProfileCard() {
-// ... (existing _buildProfileCard method unchanged)
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
       child: Card(
