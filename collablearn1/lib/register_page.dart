@@ -48,6 +48,7 @@ class _RegisterPageState extends State<RegisterPage> {
     setState(() => _isLoading = true);
 
     try {
+      // 1. Authenticate user with Firebase Auth
       final userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
@@ -62,11 +63,14 @@ class _RegisterPageState extends State<RegisterPage> {
       Map<String, dynamic> userData = {
         'firstName': _firstNameController.text.trim(),
         'lastName': _lastNameController.text.trim(),
-        'role': _selectedRole.toString().split('.').last,
+        'role': _selectedRole.toString().split('.').last, // 'student' or 'instructor'
         'email': _emailController.text.trim(),
         'createdAt': FieldValue.serverTimestamp(),
+        'enrolledClasses': [], // Initialize enrolled classes array
+        'profileImageBase64': null, // Initialize profile image
       };
 
+      // 2. Set user-specific identifier (Entry No or Instructor ID)
       if (_selectedRole == UserRole.student) {
         userIdentifier = _entryNoController.text.trim();
         userData['entryNo'] = userIdentifier;
@@ -77,16 +81,19 @@ class _RegisterPageState extends State<RegisterPage> {
         userData['entryNo'] = '';
       }
 
+      // 3. Perform batch write for user profile and lookup document
       final batch = FirebaseFirestore.instance.batch();
       final userDocRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
       batch.set(userDocRef, userData);
 
+      // Create a lookup document for username/ID login functionality
       if (userIdentifier.isNotEmpty) {
         final lookupDocRef = FirebaseFirestore.instance.collection('user_lookups').doc(userIdentifier);
-        
-        // --- THIS IS THE FINAL, CORRECTED LINE ---
-        // We now use the email from the controller, which is guaranteed to be correct.
-        batch.set(lookupDocRef, {'uid': user.uid, 'email': _emailController.text.trim()});
+        // The lookup doc links the identifier (e.g., Entry No) to the user's email and UID.
+        batch.set(lookupDocRef, {
+          'uid': user.uid, 
+          'email': _emailController.text.trim()
+        });
       }
 
       await batch.commit();
@@ -95,12 +102,13 @@ class _RegisterPageState extends State<RegisterPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Registration Successful!'), backgroundColor: Colors.green),
         );
-        Navigator.pop(context);
+        // Navigate back to the LoginPage
+        Navigator.pop(context); 
       }
     } on FirebaseAuthException catch (e) {
       String message = 'An error occurred. Please try again.';
       if (e.code == 'weak-password') {
-        message = 'The password provided is too weak.';
+        message = 'The password provided is too weak (min 6 characters).';
       } else if (e.code == 'email-already-in-use') {
         message = 'The account already exists for that email.';
       }
@@ -116,7 +124,6 @@ class _RegisterPageState extends State<RegisterPage> {
     }
   }
 
-  // The build method and helpers are unchanged and correct.
   @override
   Widget build(BuildContext context) {
     const String backgroundImage = 'assets/background.jpg';
@@ -171,7 +178,11 @@ class _RegisterPageState extends State<RegisterPage> {
                           ],
                         ),
                         const SizedBox(height: 20),
-                        _buildTextField(controller: _emailController, labelText: 'Email Address', hintText: 'Email', keyboardType: TextInputType.emailAddress),
+                        _buildTextField(controller: _emailController, labelText: 'Email Address', hintText: 'Email', keyboardType: TextInputType.emailAddress, validator: (value) {
+                          if (value == null || value.isEmpty) return 'Email is required';
+                          if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value)) return 'Enter a valid email';
+                          return null;
+                        }),
                         const SizedBox(height: 20),
                         if (_selectedRole == UserRole.student)
                           _buildTextField(controller: _entryNoController, labelText: 'Entry No', hintText: 'e.g., 2025CSM1016')

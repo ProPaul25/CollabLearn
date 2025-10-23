@@ -5,6 +5,52 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:math';
 
+// --- NEW PLACEHOLDER PAGE FOR DEMONSTRATION ---
+class ClassSuccessPlaceholderPage extends StatelessWidget {
+  final String classId;
+  final String className;
+  final String classCode;
+
+  const ClassSuccessPlaceholderPage({
+    super.key,
+    required this.classId,
+    required this.className,
+    required this.classCode,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Class Dashboard Placeholder')),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.check_circle_outline, color: Colors.green, size: 80),
+              const SizedBox(height: 20),
+              Text('Success! $className Created.', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 10),
+              Text('Class ID: $classId', style: const TextStyle(fontSize: 16)),
+              Text('Class Code: $classCode', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.deepPurple)),
+              const SizedBox(height: 40),
+              // This is where you will navigate to your real CourseDashboardPage
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context); // Go back to LandingPage
+                },
+                child: const Text('Go to Home'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+// ------------------------------------------------
+
 class CreateClassPage extends StatefulWidget {
   const CreateClassPage({super.key});
 
@@ -74,7 +120,8 @@ class _CreateClassPageState extends State<CreateClassPage> {
         return _createClass();
       }
 
-      await FirebaseFirestore.instance.collection('classes').add({
+      // --- MODIFICATION 1: Use .add() and capture the reference ---
+      final newClassRef = await FirebaseFirestore.instance.collection('classes').add({
         'className': className,
         'classDescription': classDescription,
         'classCode': classCode,
@@ -83,8 +130,12 @@ class _CreateClassPageState extends State<CreateClassPage> {
         'createdAt': FieldValue.serverTimestamp(),
         'studentIds': [], // Initialize with an empty list of students
       });
+      
+      // --- MODIFICATION 2: Get the newly created class ID ---
+      final newClassId = newClassRef.id;
 
       if (mounted) {
+        // Show snackbar with code
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Class "$className" created successfully! Code: $classCode'),
@@ -92,7 +143,20 @@ class _CreateClassPageState extends State<CreateClassPage> {
             duration: const Duration(seconds: 4),
           ),
         );
-        Navigator.pop(context);
+        
+        // --- MODIFICATION 3: Navigate to the class's specific page ---
+        // REPLACE ClassSuccessPlaceholderPage with your actual CourseDashboardPage!
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ClassSuccessPlaceholderPage(
+              classId: newClassId,
+              className: className,
+              classCode: classCode,
+            ),
+            // builder: (context) => CourseDashboardPage(classId: newClassId), // <--- USE THIS LATER
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -109,6 +173,7 @@ class _CreateClassPageState extends State<CreateClassPage> {
 
   @override
   Widget build(BuildContext context) {
+    // ... (The rest of the build method is unchanged)
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primaryColor = Theme.of(context).colorScheme.primary;
 
