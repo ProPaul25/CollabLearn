@@ -63,10 +63,9 @@ class _CreateClassPageState extends State<CreateClassPage> {
       final String className = _classNameController.text.trim();
       final String classDescription = _classDescriptionController.text.trim();
 
-      // --- CRITICAL FIX: INSECURE READ/UNIQUENESS CHECK REMOVED ---
-      // The Firestore query and recursive retry block were deleted.
-      // The app now relies on the security rule and low collision probability.
-
+      // --- FIX 1: Removed insecure read query for class code uniqueness check. ---
+      // The app now relies on the security rule check for write operation.
+      
       // 1. Write the new class document and capture its reference
       final newClassRef = await FirebaseFirestore.instance.collection('classes').add({
         'className': className,
@@ -80,6 +79,11 @@ class _CreateClassPageState extends State<CreateClassPage> {
       
       final newClassId = newClassRef.id;
 
+      // 2. Update the instructor's user document to link the new class ID
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+        'enrolledClasses': FieldValue.arrayUnion([newClassId]),
+      });
+
       if (mounted) {
         // Show snackbar with success message and code
         ScaffoldMessenger.of(context).showSnackBar(
@@ -90,7 +94,7 @@ class _CreateClassPageState extends State<CreateClassPage> {
           ),
         );
         
-        // 2. Navigate to the newly created class's dashboard page
+        // 3. Navigate to the newly created class's dashboard page
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -104,8 +108,6 @@ class _CreateClassPageState extends State<CreateClassPage> {
       }
     } catch (e) {
       if (mounted) {
-        // This Snackbar will now primarily catch the 'permission-denied' error 
-        // if the security rules are STILL wrong, or a genuine network error.
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to create class: $e'), backgroundColor: Colors.red),
         );
@@ -249,4 +251,4 @@ class _CreateClassPageState extends State<CreateClassPage> {
       },
     );
   }
-} 
+}

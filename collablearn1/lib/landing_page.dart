@@ -6,7 +6,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:collablearn1/edit_profile_page.dart';
 import 'package:collablearn1/join_class_page.dart';
-import 'package:collablearn1/create_class_page.dart'; // NEW IMPORT
+import 'package:collablearn1/create_class_page.dart'; 
+import 'package:collablearn1/course_dashboard_page.dart'; // NEW IMPORT
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -29,11 +30,17 @@ class _LandingPageState extends State<LandingPage> {
   String _userEmail = "";
   String _userRole = "";
   Uint8List? _profileImageBytes;
+  
+  // --- NEW STATE VARIABLES ---
+  List<Map<String, dynamic>> _enrolledClasses = [];
+  bool _isClassesLoading = true;
+  // -------------------------
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
+    // We fetch classes inside _loadUserData after confirming user exists
   }
 
   Future<void> _loadUserData() async {
@@ -59,6 +66,8 @@ class _LandingPageState extends State<LandingPage> {
               _profileImageBytes = null;
             }
           });
+          // Call class fetch after profile data is loaded
+          _fetchEnrolledClasses(data['enrolledClasses'] ?? []); 
         }
       } else if (mounted) {
         setState(() {
@@ -67,7 +76,41 @@ class _LandingPageState extends State<LandingPage> {
           _userRole = "student";
           _profileImageBytes = null;
         });
+        _fetchEnrolledClasses([]);
       }
+    }
+  }
+
+  // --- NEW METHOD TO FETCH CLASSES ---
+  Future<void> _fetchEnrolledClasses(List<dynamic> classIds) async {
+    if (classIds.isEmpty) {
+      if (mounted) setState(() => _isClassesLoading = false);
+      return;
+    }
+
+    try {
+      // Fetch class details for all IDs using an 'whereIn' query
+      // Note: Firestore 'whereIn' is limited to 10 items per query
+      final classesSnapshot = await FirebaseFirestore.instance
+          .collection('classes')
+          .where(FieldPath.documentId, whereIn: classIds)
+          .get();
+
+      final classes = classesSnapshot.docs.map((doc) {
+        final data = doc.data();
+        data['classId'] = doc.id; // Add the document ID for navigation
+        return data;
+      }).toList();
+
+      if (mounted) {
+        setState(() {
+          _enrolledClasses = classes;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error fetching enrolled classes: $e');
+    } finally {
+      if (mounted) setState(() => _isClassesLoading = false);
     }
   }
 
@@ -102,11 +145,15 @@ class _LandingPageState extends State<LandingPage> {
   List<Widget> _buildMenuItems() {
     if (_userRole == 'instructor') {
       return [
-        ListTile(leading: const Icon(Icons.class_outlined), title: const Text('My Classes'), onTap: () => Navigator.pop(context)),
-        // UPDATED: Navigate to CreateClassPage
+        ListTile(leading: const Icon(Icons.class_outlined), title: const Text('My Classes'), onTap: () {
+           Navigator.pop(context); // Close the drawer
+           // If the instructor has classes, we should stay here.
+        }),
         ListTile(leading: const Icon(Icons.add_box_outlined), title: const Text('Create Class'), onTap: () {
           Navigator.pop(context); // Close the drawer
-          Navigator.push(context, MaterialPageRoute(builder: (context) => const CreateClassPage()));
+          Navigator.push(context, MaterialPageRoute(builder: (context) => const CreateClassPage())).then((_) {
+            _loadUserData(); // Reload data when returning
+          });
         }),
         ListTile(leading: const Icon(Icons.people_alt_outlined), title: const Text('Student Management'), onTap: () => Navigator.pop(context)),
       ];
@@ -115,7 +162,9 @@ class _LandingPageState extends State<LandingPage> {
         ListTile(leading: const Icon(Icons.class_outlined), title: const Text('My Classes'), onTap: () => Navigator.pop(context)),
         ListTile(leading: const Icon(Icons.person_add_alt_1_outlined), title: const Text('Join Class'), onTap: () {
           Navigator.pop(context); // Close the drawer first
-          Navigator.push(context, MaterialPageRoute(builder: (context) => const JoinClassPage()));
+          Navigator.push(context, MaterialPageRoute(builder: (context) => const JoinClassPage())).then((_) {
+            _loadUserData(); // Reload data when returning
+          });
         }),
       ];
     }
@@ -127,9 +176,8 @@ class _LandingPageState extends State<LandingPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('HOME'),
-        // AppBar is now opaque for a cleaner look
         backgroundColor: Theme.of(context).scaffoldBackgroundColor, 
-        elevation: 1, // Add a slight shadow
+        elevation: 1, 
         actions: [
           IconButton(
             icon: Icon(
@@ -155,7 +203,6 @@ class _LandingPageState extends State<LandingPage> {
             _buildDrawerHeader(),
             ..._buildMenuItems(),
             const Divider(),
-            // CHANGE 1: Edit Profile is now a functional button in the drawer
             ListTile(
               leading: const Icon(Icons.edit_note),
               title: const Text('Edit Profile'),
@@ -166,7 +213,6 @@ class _LandingPageState extends State<LandingPage> {
                   MaterialPageRoute(builder: (context) => const EditProfilePage()),
                 ).then((_) {
                   // This is called when we return from the EditProfilePage.
-                  // It refreshes the user's data to show any changes.
                   _loadUserData();
                 });
               },
@@ -191,7 +237,7 @@ class _LandingPageState extends State<LandingPage> {
           ],
         ),
       ),
-      // The body of the Scaffold remains the same
+      // The body of the Scaffold now displays class list
       body: Column(
         children: [
           Expanded(
@@ -227,7 +273,8 @@ class _LandingPageState extends State<LandingPage> {
                   topRight: Radius.circular(40.0),
                 ),
               ),
-              child: _buildNoClassesView(),
+              // --- Display Classes or No Classes View ---
+              child: _buildClassesView(),
             ),
           ),
         ],
@@ -236,6 +283,7 @@ class _LandingPageState extends State<LandingPage> {
   }
 
   Widget _buildProfileCard() {
+// ... (existing _buildProfileCard method unchanged)
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
       child: Card(
@@ -287,11 +335,10 @@ class _LandingPageState extends State<LandingPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // CHANGE 2 & 3: Removed the "Edit Profile" link and adjusted text sizes
                         Text(
                           _userName,
                           style: const TextStyle(
-                            fontSize: 20, // Increased for prominence
+                            fontSize: 20, 
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -309,7 +356,6 @@ class _LandingPageState extends State<LandingPage> {
                             fontStyle: FontStyle.italic
                           ),
                         ),
-                        // The InkWell for "Edit Profile" has been removed from here.
                       ],
                     ),
                   ),
@@ -328,6 +374,79 @@ class _LandingPageState extends State<LandingPage> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+
+  // --- NEW METHOD: Conditional View for Classes ---
+  Widget _buildClassesView() {
+    if (_isClassesLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    
+    if (_enrolledClasses.isEmpty) {
+      return _buildNoClassesView();
+    }
+
+    // Display the list of enrolled classes
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20.0, 20.0, 20.0, 10.0),
+          child: Text(
+            _userRole == 'instructor' ? "My Classes" : "Enrolled Classes",
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            itemCount: _enrolledClasses.length,
+            itemBuilder: (context, index) {
+              final classData = _enrolledClasses[index];
+              return _buildClassListItem(context, classData);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  // --- NEW METHOD: Class List Item ---
+  Widget _buildClassListItem(BuildContext context, Map<String, dynamic> classData) {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      child: ListTile(
+        leading: Icon(Icons.class_, color: Theme.of(context).colorScheme.primary),
+        title: Text(
+          classData['className'] ?? 'Unnamed Class',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        subtitle: Text('Code: ${classData['classCode'] ?? 'N/A'}'),
+        trailing: _userRole == 'instructor'
+            ? const Icon(Icons.chevron_right)
+            : const Icon(Icons.group_add, color: Colors.green),
+        onTap: () {
+          // Navigate to the specific class dashboard page
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => CourseDashboardPage(
+                classId: classData['classId'],
+                className: classData['className'],
+                classCode: classData['classCode'],
+              ),
+            ),
+          ).then((_) {
+            // Refresh the class list when returning to the landing page
+            _loadUserData(); 
+          });
+        },
       ),
     );
   }
@@ -376,8 +495,9 @@ class _LandingPageState extends State<LandingPage> {
             color: Colors.transparent,
             child: InkWell(
               onTap: () {
-                // UPDATED: Navigate to CreateClassPage
-                Navigator.push(context, MaterialPageRoute(builder: (context) => const CreateClassPage()));
+                Navigator.push(context, MaterialPageRoute(builder: (context) => const CreateClassPage())).then((_) {
+                  _loadUserData(); // Reload data when returning
+                });
               },
               borderRadius: BorderRadius.circular(30),
               child: const Center(
@@ -407,7 +527,9 @@ class _LandingPageState extends State<LandingPage> {
         width: double.infinity,
         child: ElevatedButton(
           onPressed: () {
-            Navigator.push(context, MaterialPageRoute(builder: (context) => const JoinClassPage()));
+            Navigator.push(context, MaterialPageRoute(builder: (context) => const JoinClassPage())).then((_) {
+              _loadUserData(); // Reload data when returning
+            });
           },
           style: ElevatedButton.styleFrom(
             backgroundColor: Theme.of(context).colorScheme.primary,
