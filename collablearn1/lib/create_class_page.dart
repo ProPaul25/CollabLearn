@@ -4,52 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:math';
-
-// --- NEW PLACEHOLDER PAGE FOR DEMONSTRATION ---
-class ClassSuccessPlaceholderPage extends StatelessWidget {
-  final String classId;
-  final String className;
-  final String classCode;
-
-  const ClassSuccessPlaceholderPage({
-    super.key,
-    required this.classId,
-    required this.className,
-    required this.classCode,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Class Dashboard Placeholder')),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.check_circle_outline, color: Colors.green, size: 80),
-              const SizedBox(height: 20),
-              Text('Success! $className Created.', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 10),
-              Text('Class ID: $classId', style: const TextStyle(fontSize: 16)),
-              Text('Class Code: $classCode', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.deepPurple)),
-              const SizedBox(height: 40),
-              // This is where you will navigate to your real CourseDashboardPage
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context); // Go back to LandingPage
-                },
-                child: const Text('Go to Home'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-// ------------------------------------------------
+import 'package:collablearn1/course_dashboard_page.dart'; 
 
 class CreateClassPage extends StatefulWidget {
   const CreateClassPage({super.key});
@@ -108,19 +63,11 @@ class _CreateClassPageState extends State<CreateClassPage> {
       final String className = _classNameController.text.trim();
       final String classDescription = _classDescriptionController.text.trim();
 
-      // Check if the generated code already exists (unlikely but safe)
-      final codeCheck = await FirebaseFirestore.instance
-          .collection('classes')
-          .where('classCode', isEqualTo: classCode)
-          .limit(1)
-          .get();
+      // --- CRITICAL FIX: INSECURE READ/UNIQUENESS CHECK REMOVED ---
+      // The Firestore query and recursive retry block were deleted.
+      // The app now relies on the security rule and low collision probability.
 
-      if (codeCheck.docs.isNotEmpty) {
-        // If the code exists, recursively try again (simple retry logic)
-        return _createClass();
-      }
-
-      // --- MODIFICATION 1: Use .add() and capture the reference ---
+      // 1. Write the new class document and capture its reference
       final newClassRef = await FirebaseFirestore.instance.collection('classes').add({
         'className': className,
         'classDescription': classDescription,
@@ -131,11 +78,10 @@ class _CreateClassPageState extends State<CreateClassPage> {
         'studentIds': [], // Initialize with an empty list of students
       });
       
-      // --- MODIFICATION 2: Get the newly created class ID ---
       final newClassId = newClassRef.id;
 
       if (mounted) {
-        // Show snackbar with code
+        // Show snackbar with success message and code
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Class "$className" created successfully! Code: $classCode'),
@@ -144,22 +90,22 @@ class _CreateClassPageState extends State<CreateClassPage> {
           ),
         );
         
-        // --- MODIFICATION 3: Navigate to the class's specific page ---
-        // REPLACE ClassSuccessPlaceholderPage with your actual CourseDashboardPage!
+        // 2. Navigate to the newly created class's dashboard page
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (context) => ClassSuccessPlaceholderPage(
+            builder: (context) => CourseDashboardPage(
               classId: newClassId,
               className: className,
               classCode: classCode,
             ),
-            // builder: (context) => CourseDashboardPage(classId: newClassId), // <--- USE THIS LATER
           ),
         );
       }
     } catch (e) {
       if (mounted) {
+        // This Snackbar will now primarily catch the 'permission-denied' error 
+        // if the security rules are STILL wrong, or a genuine network error.
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to create class: $e'), backgroundColor: Colors.red),
         );
@@ -173,7 +119,6 @@ class _CreateClassPageState extends State<CreateClassPage> {
 
   @override
   Widget build(BuildContext context) {
-    // ... (The rest of the build method is unchanged)
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primaryColor = Theme.of(context).colorScheme.primary;
 
@@ -304,4 +249,4 @@ class _CreateClassPageState extends State<CreateClassPage> {
       },
     );
   }
-}
+} 
