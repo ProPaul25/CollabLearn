@@ -135,7 +135,6 @@ class StudyMaterialsViewPage extends StatelessWidget {
       ),
       
       //test git
-
       // FAB for Instructor to upload new material
       floatingActionButton: isUserInstructor
           ? FloatingActionButton.extended(
