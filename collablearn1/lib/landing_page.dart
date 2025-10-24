@@ -8,7 +8,7 @@ import 'package:collablearn1/edit_profile_page.dart';
 import 'package:collablearn1/join_class_page.dart';
 import 'package:collablearn1/create_class_page.dart'; 
 import 'package:collablearn1/course_dashboard_page.dart';
-import 'package:collablearn1/user_progress_tracker_page.dart'; // NEW IMPORT for Dashboard
+import 'package:collablearn1/user_progress_tracker_page.dart'; 
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -40,17 +40,29 @@ class _LandingPageState extends State<LandingPage> {
   @override
   void initState() {
     super.initState();
-    _loadUserData();
-    // Classes are fetched inside _loadUserData after profile is confirmed
+    // Data loading is handled in didChangeDependencies for reliable refresh
   }
+
+  // --- FIX: Force reload whenever the widget comes into focus ---
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _loadUserData(); 
+  }
+  // -----------------------------------------------------------------
 
   Future<void> _loadUserData() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
+      // We need to re-fetch the user data in case it was updated
       await user.reload(); 
       final refreshedUser = FirebaseAuth.instance.currentUser;
 
       final userDoc = await FirebaseFirestore.instance.collection('users').doc(refreshedUser!.uid).get();
+      
+      // Initialize an empty list of IDs
+      List<dynamic> classIds = []; 
+
       if (userDoc.exists) {
         final data = userDoc.data();
         if (data != null && mounted) {
@@ -66,8 +78,13 @@ class _LandingPageState extends State<LandingPage> {
               _profileImageBytes = null;
             }
           });
-          // Call class fetch after profile data is loaded
-          _fetchEnrolledClasses(List<dynamic>.from(data['enrolledClasses'] ?? [])); 
+          
+          // Safely extract the enrolledClasses array
+          if (data.containsKey('enrolledClasses') && data['enrolledClasses'] is List) {
+            classIds = List<String>.from(data['enrolledClasses']);
+          }
+          
+          _fetchEnrolledClasses(classIds); 
         }
       } else if (mounted) {
         setState(() {
@@ -84,7 +101,10 @@ class _LandingPageState extends State<LandingPage> {
   // --- METHOD TO FETCH CLASSES ---
   Future<void> _fetchEnrolledClasses(List<dynamic> classIds) async {
     if (classIds.isEmpty) {
-      if (mounted) setState(() => _isClassesLoading = false);
+      if (mounted) setState(() {
+        _enrolledClasses = [];
+        _isClassesLoading = false;
+      });
       return;
     }
 
@@ -93,9 +113,10 @@ class _LandingPageState extends State<LandingPage> {
       if (mounted) setState(() => _isClassesLoading = true); 
 
       // Fetch class details for all IDs using an 'whereIn' query
+      // Note: Sublisting the list ensures we respect the 10-item limit of Firestore's whereIn operator.
       final classesSnapshot = await FirebaseFirestore.instance
           .collection('classes')
-          .where(FieldPath.documentId, whereIn: classIds)
+          .where(FieldPath.documentId, whereIn: classIds.sublist(0, classIds.length > 10 ? 10 : classIds.length))
           .get();
 
       final classes = classesSnapshot.docs.map((doc) {
@@ -111,6 +132,8 @@ class _LandingPageState extends State<LandingPage> {
       }
     } catch (e) {
       debugPrint('Error fetching enrolled classes: $e');
+      // If the query fails, ensure UI still updates
+      if (mounted) setState(() => _enrolledClasses = []); 
     } finally {
       if (mounted) setState(() => _isClassesLoading = false);
     }
@@ -151,9 +174,7 @@ class _LandingPageState extends State<LandingPage> {
         ListTile(leading: const Icon(Icons.class_outlined), title: const Text('My Classes'), onTap: () => Navigator.pop(context)),
         ListTile(leading: const Icon(Icons.add_box_outlined), title: const Text('Create Class'), onTap: () {
           Navigator.pop(context); 
-          Navigator.push(context, MaterialPageRoute(builder: (context) => const CreateClassPage())).then((_) {
-            _loadUserData(); // Reload data when returning
-          });
+          Navigator.push(context, MaterialPageRoute(builder: (context) => const CreateClassPage())); 
         }),
         ListTile(leading: const Icon(Icons.people_alt_outlined), title: const Text('Student Management'), onTap: () => Navigator.pop(context)),
       ];
@@ -162,9 +183,7 @@ class _LandingPageState extends State<LandingPage> {
         ListTile(leading: const Icon(Icons.class_outlined), title: const Text('My Classes'), onTap: () => Navigator.pop(context)),
         ListTile(leading: const Icon(Icons.person_add_alt_1_outlined), title: const Text('Join Class'), onTap: () {
           Navigator.pop(context); 
-          Navigator.push(context, MaterialPageRoute(builder: (context) => const JoinClassPage())).then((_) {
-            _loadUserData(); // Reload data when returning
-          });
+          Navigator.push(context, MaterialPageRoute(builder: (context) => const JoinClassPage()));
         }),
       ];
     }
@@ -202,7 +221,6 @@ class _LandingPageState extends State<LandingPage> {
             _buildDrawerHeader(),
             ..._buildMenuItems(),
             const Divider(),
-            // NEW: Performance Report access
             ListTile(
               leading: const Icon(Icons.show_chart), 
               title: const Text('Performance Report'),
@@ -223,6 +241,7 @@ class _LandingPageState extends State<LandingPage> {
                   context,
                   MaterialPageRoute(builder: (context) => const EditProfilePage()),
                 ).then((_) {
+                  // We keep this .then() call to ensure profile data is reloaded immediately after profile edit
                   _loadUserData();
                 });
               },
@@ -450,10 +469,7 @@ class _LandingPageState extends State<LandingPage> {
                 classCode: classData['classCode'],
               ),
             ),
-          ).then((_) {
-            // Refresh the class list when returning to the landing page
-            _loadUserData(); 
-          });
+          ); 
         },
       ),
     );
@@ -488,35 +504,36 @@ class _LandingPageState extends State<LandingPage> {
   Widget _buildCreateClassButton() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 40),
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(colors: [Colors.pinkAccent, Colors.purpleAccent]),
-          borderRadius: BorderRadius.circular(30),
-        ),
+      child: SizedBox(
+        width: double.infinity,
         child: Container(
-          margin: const EdgeInsets.all(2),
           decoration: BoxDecoration(
-            color: Theme.of(context).scaffoldBackgroundColor,
+            gradient: const LinearGradient(colors: [Colors.pinkAccent, Colors.purpleAccent]),
             borderRadius: BorderRadius.circular(30),
           ),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: () {
-                Navigator.push(context, MaterialPageRoute(builder: (context) => const CreateClassPage())).then((_) {
-                  _loadUserData(); // Reload data when returning
-                });
-              },
+          child: Container(
+            margin: const EdgeInsets.all(2),
+            decoration: BoxDecoration(
+              color: Theme.of(context).scaffoldBackgroundColor,
               borderRadius: BorderRadius.circular(30),
-              child: const Center(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(vertical: 16),
-                  child: Text(
-                    'Create Class',
-                    style: TextStyle(
-                      color: Colors.pink,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () {
+                  Navigator.push(context, MaterialPageRoute(builder: (context) => const CreateClassPage())); 
+                },
+                borderRadius: BorderRadius.circular(30),
+                child: const Center(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Text(
+                      'Create Class',
+                      style: TextStyle(
+                        color: Colors.pink,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ),
@@ -535,9 +552,7 @@ class _LandingPageState extends State<LandingPage> {
         width: double.infinity,
         child: ElevatedButton(
           onPressed: () {
-            Navigator.push(context, MaterialPageRoute(builder: (context) => const JoinClassPage())).then((_) {
-              _loadUserData(); // Reload data when returning
-            });
+            Navigator.push(context, MaterialPageRoute(builder: (context) => const JoinClassPage())); 
           },
           style: ElevatedButton.styleFrom(
             backgroundColor: Theme.of(context).colorScheme.primary,

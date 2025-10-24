@@ -1,3 +1,5 @@
+// lib/join_class_page.dart
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -39,9 +41,12 @@ class _JoinClassPageState extends State<JoinClassPage> {
     }
 
     try {
+      final classCode = _classCodeController.text.trim();
+      
+      // 1. Query the 'classes' collection to find the class document by code
       final querySnapshot = await FirebaseFirestore.instance
           .collection('classes')
-          .where('classCode', isEqualTo: _classCodeController.text.trim())
+          .where('classCode', isEqualTo: classCode)
           .limit(1)
           .get();
 
@@ -53,8 +58,10 @@ class _JoinClassPageState extends State<JoinClassPage> {
         }
       } else {
         final classDoc = querySnapshot.docs.first;
+        final classId = classDoc.id;
         final List studentIds = classDoc.data()['studentIds'] ?? [];
 
+        // Check if user is already enrolled
         if (studentIds.contains(user.uid)) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -62,14 +69,26 @@ class _JoinClassPageState extends State<JoinClassPage> {
             );
           }
         } else {
-          await classDoc.reference.update({
+          // --- Perform a Batch Write for Atomicity and Data Integrity ---
+          final batch = FirebaseFirestore.instance.batch();
+          
+          // 2. Add student UID to the class document's studentIds array
+          batch.update(classDoc.reference, {
             'studentIds': FieldValue.arrayUnion([user.uid]),
           });
+
+          // 3. CRITICAL FIX: Add class ID to the user's enrolledClasses array
+          batch.update(FirebaseFirestore.instance.collection('users').doc(user.uid), {
+            'enrolledClasses': FieldValue.arrayUnion([classId]),
+          });
+
+          await batch.commit();
+
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Successfully joined the class!'), backgroundColor: Colors.green),
             );
-            Navigator.pop(context);
+            Navigator.pop(context); // Go back to the landing page, triggering the refresh
           }
         }
       }
