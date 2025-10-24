@@ -1,6 +1,7 @@
 // lib/course_dashboard_page.dart
 
 import 'package:flutter/material.dart';
+import 'study_materials_view_page.dart';
 import 'doubt_polls_view_page.dart';
 
 class CourseDashboardPage extends StatefulWidget {
@@ -28,14 +29,13 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
   void initState() {
     super.initState();
     _widgetOptions = <Widget>[
-      // 0: Stream (Already implemented with stream_page.dart)
-      // 0: Stream (Uses the dedicated StreamTab widget)
         StreamTab(
           className: widget.className,
           classCode: widget.classCode,
         ),
       // 1: Classworks
-      const Center(child: Text('Classworks Page (Assignments/Quizzes)', style: TextStyle(fontSize: 30))),
+      StudyMaterialsViewPage(classId: widget.classId),
+      //const Center(child: Text('Classworks Page (Assignments/Quizzes)', style: TextStyle(fontSize: 30))),
       // 2: People
       const Center(child: Text('People Page (Students/Instructor List)', style: TextStyle(fontSize: 30))),
       // 3: Attendance
