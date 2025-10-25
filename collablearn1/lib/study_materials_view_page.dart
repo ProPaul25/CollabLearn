@@ -71,9 +71,18 @@ class StudyMaterialsViewPage extends StatelessWidget {
   // NOTE: You would typically fetch the user's role from their Firestore document
   // For this implementation, we will use a basic check for demonstration.
   // Replace this with your actual role checking logic.
-  bool isInstructor(BuildContext context) {
-    // Replace with actual role check from user data
-    return true; // Assume true for testing instructor features
+  Future<bool> isCurrentUserInstructor(String instructorId) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return false;
+    
+    // 1. Quick check if the user is the instructor of this specific course
+    if (user.uid == instructorId) return true; 
+
+    // 2. Fallback check (for future: check a 'role' field on the user document)
+    // final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+    // return userDoc.data()?['role'] == 'instructor';
+    
+    return false; // Default to false if neither check passes
   }
 
   // Function to open the file URL
@@ -87,70 +96,95 @@ class StudyMaterialsViewPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
-    final isUserInstructor = isInstructor(context);
     final primaryColor = Theme.of(context).colorScheme.primary;
 
-    return Scaffold(
-      body: StreamBuilder<List<StudyMaterial>>(
-        stream: getMaterialsStream(classId),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text('Error loading materials: ${snapshot.error.toString()}'));
-          }
+    return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      future: FirebaseFirestore.instance.collection('classes').doc(classId).get(),
+      builder: (context, classSnapshot) {
+        if (!classSnapshot.hasData || classSnapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (classSnapshot.hasError || !classSnapshot.data!.exists) {
+          return const Center(child: Text('Could not load class data.'));
+        }
 
-          final materials = snapshot.data ?? [];
+        final classData = classSnapshot.data!.data()!;
+        final instructorId = classData['instructorId'] as String;
 
-          if (materials.isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(20.0),
-                child: Text(
-                  isUserInstructor 
-                      ? 'No materials uploaded yet. Tap the button to share resources.'
-                      : 'No study materials have been shared for this course.',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 16, color: Colors.grey),
-                ),
+        // --- 2. INNER FUTUREBUILDER: Check User Role using instructorId ---
+        return FutureBuilder<bool>(
+          // CORRECT CALL: Pass the fetched String (instructorId)
+          future: isCurrentUserInstructor(instructorId), 
+          builder: (context, roleSnapshot) {
+            
+            // Assume student role until the role check completes (or if error occurs)
+            final isUserInstructor = roleSnapshot.data ?? false; 
+
+            // --- 3. STREAMBUILDER: Load Study Materials (The main content) ---
+            return Scaffold(
+              body: StreamBuilder<List<StudyMaterial>>(
+                stream: getMaterialsStream(classId),
+                builder: (context, materialSnapshot) {
+                  if (materialSnapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (materialSnapshot.hasError) {
+                    return Center(child: Text('Error loading materials: ${materialSnapshot.error.toString()}'));
+                  }
+
+                  final materials = materialSnapshot.data ?? [];
+                  final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+
+                  if (materials.isEmpty) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(20.0),
+                        child: Text(
+                          isUserInstructor 
+                              ? 'No materials uploaded yet. Tap the button to share resources.'
+                              : 'No study materials have been shared for this course.',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 16, color: Colors.grey),
+                        ),
+                      ),
+                    );
+                  }
+
+                  return ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: materials.length,
+                    itemBuilder: (context, index) {
+                      final material = materials[index];
+                      return MaterialCard(
+                        material: material,
+                        onView: () => _launchUrl(material.fileUrl),
+                        isUploader: material.uploaderId == currentUserId,
+                      );
+                    },
+                  );
+                },
               ),
+              
+              // --- 4. FLOATING ACTION BUTTON: Conditional Display based on role ---
+              floatingActionButton: isUserInstructor
+                  ? FloatingActionButton.extended(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => UploadMaterialPage(classId: classId),
+                          ),
+                        );
+                      },
+                      label: const Text('Upload Material'),
+                      icon: const Icon(Icons.add),
+                      backgroundColor: primaryColor,
+                      foregroundColor: Colors.white,
+                    )
+                  : null,
             );
-          }
-
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: materials.length,
-            itemBuilder: (context, index) {
-              final material = materials[index];
-              return MaterialCard(
-                material: material,
-                onView: () => _launchUrl(material.fileUrl),
-                isUploader: material.uploaderId == currentUserId,
-              );
-            },
-          );
-        },
-      ),
-      
-      //test git
-      // FAB for Instructor to upload new material
-      floatingActionButton: isUserInstructor
-          ? FloatingActionButton.extended(
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => UploadMaterialPage(classId: classId),
-                  ),
-                );
-              },
-              label: const Text('Upload Material'),
-              icon: const Icon(Icons.add),
-              backgroundColor: primaryColor,
-              foregroundColor: Colors.white,
-            )
-          : null,
+          },
+        );
+      },
     );
   }
 }

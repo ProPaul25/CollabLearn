@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'study_materials_view_page.dart';
 import 'doubt_polls_view_page.dart';
+import 'people_view_page.dart';
 
 class CourseDashboardPage extends StatefulWidget {
   final String classId;
@@ -37,7 +38,8 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
       StudyMaterialsViewPage(classId: widget.classId),
       //const Center(child: Text('Classworks Page (Assignments/Quizzes)', style: TextStyle(fontSize: 30))),
       // 2: People
-      const Center(child: Text('People Page (Students/Instructor List)', style: TextStyle(fontSize: 30))),
+      PeopleViewPage(classId: widget.classId),
+      // const Center(child: Text('People Page (Students/Instructor List)', style: TextStyle(fontSize: 30))),
       // 3: Attendance
       const Center(child: Text('Attendance Page (QR/Manual System)', style: TextStyle(fontSize: 30))),
       // 4: Discussion (Doubt Polls) - NOW USING THE REAL PAGE
