@@ -63,12 +63,17 @@ class _CreateClassPageState extends State<CreateClassPage> {
       final String className = _classNameController.text.trim();
       final String classDescription = _classDescriptionController.text.trim();
 
-      // --- CRITICAL FIX: INSECURE READ/UNIQUENESS CHECK REMOVED ---
-      // The Firestore query and recursive retry block were deleted.
-      // The app now relies on the security rule and low collision probability.
+      // --- FIX: Use a batch write to create the class AND update the user ---
+      
+      // 1. Get references for the batch operation
+      final newClassRef = FirebaseFirestore.instance.collection('classes').doc(); // Create a reference with a new ID
+      final userDocRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
+      
+      // 2. Create the batch
+      final batch = FirebaseFirestore.instance.batch();
 
-      // 1. Write the new class document and capture its reference
-      final newClassRef = await FirebaseFirestore.instance.collection('classes').add({
+      // 3. Operation 1: Create the new class document
+      batch.set(newClassRef, {
         'className': className,
         'classDescription': classDescription,
         'classCode': classCode,
@@ -77,8 +82,19 @@ class _CreateClassPageState extends State<CreateClassPage> {
         'createdAt': FieldValue.serverTimestamp(),
         'studentIds': [], // Initialize with an empty list of students
       });
+
+      // 4. Operation 2: Add the new class ID to the instructor's 'enrolledClasses' array
+      batch.update(userDocRef, {
+        'enrolledClasses': FieldValue.arrayUnion([newClassRef.id]),
+      });
+
+      // 5. Commit both operations atomically
+      await batch.commit();
       
+      // 6. Get the ID for navigation
       final newClassId = newClassRef.id;
+      // --- END OF FIX ---
+
 
       if (mounted) {
         // Show snackbar with success message and code
@@ -90,7 +106,7 @@ class _CreateClassPageState extends State<CreateClassPage> {
           ),
         );
         
-        // 2. Navigate to the newly created class's dashboard page
+        // 7. Navigate to the newly created class's dashboard page
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -104,8 +120,6 @@ class _CreateClassPageState extends State<CreateClassPage> {
       }
     } catch (e) {
       if (mounted) {
-        // This Snackbar will now primarily catch the 'permission-denied' error 
-        // if the security rules are STILL wrong, or a genuine network error.
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to create class: $e'), backgroundColor: Colors.red),
         );
