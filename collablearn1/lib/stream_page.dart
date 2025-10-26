@@ -1,12 +1,11 @@
-// lib/stream_page.dart
+// lib/stream_page.dart - CORRECTED
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'create_announcement_page.dart'; // Import for the new page
-import 'announcement_detail_page.dart'; // Import for the new page
+// Import for the detail page
+import 'announcement_detail_page.dart'; 
 
-// --- DATA MODEL (MUST MATCH ANNOUNCEMENT STRUCTURE) ---
+// --- DATA MODEL (Unchanged) ---
 class Announcement {
   final String id;
   final String title;
@@ -47,9 +46,7 @@ class StreamPage extends StatelessWidget {
     required this.classId,
   });
 
-  // --- FIRESTORE STREAMS & QUERIES ---
-
-  // 1. Real-time Stream for Announcements
+  // 1. Real-time Stream for Announcements (Unchanged)
   Stream<List<Announcement>> getAnnouncementsStream(String courseId) {
     return FirebaseFirestore.instance
         .collection('announcements')
@@ -63,49 +60,18 @@ class StreamPage extends StatelessWidget {
     });
   }
 
-  // 2. Future to fetch Course Metadata (Instructor Name and Student Count)
-  // 2. Future to fetch Course Metadata (Instructor Name and Student Count)
-  Future<Map<String, dynamic>> _fetchCourseMetadata(String classId) async {
-    final courseDoc = await FirebaseFirestore.instance.collection('classes').doc(classId).get();
-    final courseData = courseDoc.data();
-
-    if (courseData == null) {
-      return {'instructorName': 'N/A', 'studentsEnrolled': 0};
-    }
-
-    // Fetch Instructor Name
-    String instructorName = 'Instructor Unknown';
-    final instructorId = courseData['instructorId'];
-    if (instructorId != null) {
-      final userDoc = await FirebaseFirestore.instance.collection('users').doc(instructorId).get();
-      
-      // FIX: Read 'firstName' and 'lastName' instead of 'name'
-      final data = userDoc.data();
-      final String firstName = data?['firstName'] ?? '';
-      final String lastName = data?['lastName'] ?? '';
-      final String name = "$firstName $lastName".trim();
-      instructorName = name.isEmpty ? 'Instructor' : name;
-    }
-
-    // FIX: Read 'studentIds' instead of 'students'
-    final studentsEnrolled = (courseData['studentIds'] as List?)?.length ?? 0;
-    
-    return {
-      'instructorName': instructorName,
-      'studentsEnrolled': studentsEnrolled,
-    };
-  }
-
-  // --- UI BUILDING STARTS HERE ---
+  // --- UI BUILDING STARTS HERE (NOW SIMPLIFIED) ---
   @override
   Widget build(BuildContext context) {
-    final primaryColor = Theme.of(context).colorScheme.primary;
-
     return StreamBuilder<List<Announcement>>(
       stream: getAnnouncementsStream(classId),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          // Use a smaller, centered indicator as this is now an embedded widget
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 40.0),
+            child: Center(child: CircularProgressIndicator()),
+          );
         }
 
         if (snapshot.hasError) {
@@ -114,123 +80,26 @@ class StreamPage extends StatelessWidget {
 
         final announcements = snapshot.data ?? [];
 
-        return SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              // *** TODO 3 COMPLETED: Dynamic Course Info Card ***
-              _buildDynamicCourseInfoCard(context, primaryColor, classId),
-
-              const SizedBox(height: 20),
-              
-              // *** TODO 1 COMPLETED: New Post Button with Navigation ***
-              _buildNewPostButton(context),
-
-              const SizedBox(height: 20),
-
-              Text(
-                'Recent Announcements',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 10),
-
-              if (announcements.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.only(top: 20),
-                  child: Center(child: Text('No announcements posted yet for this course.')),
-                )
-              else
-                ...announcements.map((announcement) => _buildAnnouncementCard(context, announcement)).toList(),
-            ],
-          ),
+        // --- FIX: Return a Column directly ---
+        // This widget is now just the list of posts (or an empty message)
+        // It no longer has its own scrolling, padding, or extra UI elements
+        return Column(
+          children: [
+            if (announcements.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(top: 20),
+                child: Center(child: Text('No announcements posted yet for this course.')),
+              )
+            else
+              // Create a list of widgets and expand them into the Column
+              ...announcements.map((announcement) => _buildAnnouncementCard(context, announcement)).toList(),
+          ],
         );
       },
     );
   }
 
-  // --- Helper Widgets ---
-
-  // Refactored to fetch dynamic course data
-  Widget _buildDynamicCourseInfoCard(BuildContext context, Color primaryColor, String id) {
-    return FutureBuilder<Map<String, dynamic>>(
-      future: _fetchCourseMetadata(id),
-      builder: (context, snapshot) {
-        final instructorName = snapshot.data?['instructorName'] ?? 'Loading...';
-        final studentsEnrolled = snapshot.data?['studentsEnrolled'] ?? '...';
-        
-        return Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: primaryColor.withOpacity(0.9),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: primaryColor.withOpacity(0.3),
-                blurRadius: 10,
-                offset: const Offset(0, 5),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Class Code:', style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: Colors.white70)),
-              const SizedBox(height: 5),
-              Text(
-                id.replaceAll('course-', '').toUpperCase(), 
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 2,
-                ),
-              ),
-              const SizedBox(height: 10),
-              const Divider(color: Colors.white38),
-              const SizedBox(height: 10),
-              // DYNAMIC INSTRUCTOR NAME
-              Text(
-                'Instructor: $instructorName',
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: Colors.white),
-              ),
-              const SizedBox(height: 5),
-              // DYNAMIC STUDENT COUNT
-              Text(
-                'Students Enrolled: $studentsEnrolled', 
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: Colors.white),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  // Refactored to navigate to the CreateAnnouncementPage
-  Widget _buildNewPostButton(BuildContext context) {
-    // NOTE: This logic assumes the currently logged-in user is an instructor.
-    // In a final app, you must add an explicit check for the user's role 
-    // (e.g., fetching user role from Firestore) before showing this button.
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton.icon(
-        onPressed: () {
-          // Navigate to the new creation page, passing the classId
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (context) => CreateAnnouncementPage(classId: classId),
-            ),
-          );
-        },
-        icon: const Icon(Icons.add_box_rounded),
-        label: const Text('Share something with your class'),
-        style: ElevatedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(vertical: 15),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-        ),
-      ),
-    );
-  }
+  // --- Helper Widgets (Unchanged) ---
 
   // Refactored to navigate to the AnnouncementDetailPage
   Widget _buildAnnouncementCard(BuildContext context, Announcement announcement) {
@@ -279,4 +148,8 @@ class StreamPage extends StatelessWidget {
       ),
     );
   }
+
+  // --- REMOVED _fetchCourseMetadata ---
+  // --- REMOVED _buildDynamicCourseInfoCard ---
+  // --- REMOVED _buildNewPostButton ---
 }
