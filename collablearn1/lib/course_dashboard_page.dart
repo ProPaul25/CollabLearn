@@ -1,14 +1,15 @@
-// lib/course_dashboard_page.dart - CORRECTED
+// lib/course_dashboard_page.dart - FIXED
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart'; // NEW IMPORT
 import 'package:cloud_firestore/cloud_firestore.dart'; // NEW IMPORT
-import 'study_materials_view_page.dart';
+import 'study_materials_view_page.dart'; // Correct file name, original name retained
 import 'doubt_polls_view_page.dart';
 import 'people_view_page.dart';
 import 'attendance_management_page.dart';
 import 'stream_page.dart'; // NEW IMPORT (for real announcements)
 import 'create_announcement_page.dart'; // NEW IMPORT (for navigation)
+// Removed unused import 'create_assignment_page.dart'
 
 class CourseDashboardPage extends StatefulWidget {
   final String classId;
@@ -87,8 +88,8 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
               classId: widget.classId,     // Pass classId
               isInstructor: isInstructor, // Pass the role down
             ),
-            // 1: Classworks
-            StudyMaterialsViewPage(classId: widget.classId),
+            // 1: Classworks (uses the existing StudyMaterialsViewPage class)
+            StudyMaterialsViewPage(classId: widget.classId), // FIX: Use correct class name
             // 2: People
             PeopleViewPage(classId: widget.classId),
             // 3: Attendance

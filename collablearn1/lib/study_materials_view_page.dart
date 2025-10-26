@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart'; // Used to open the file URL
 import 'package:firebase_auth/firebase_auth.dart';
 import 'upload_material_page.dart'; // Import the upload page
+import 'create_assignment_page.dart'; // NEW: Import the assignment creation page
 
 // --- Data Model ---
 class StudyMaterial {
@@ -93,6 +94,55 @@ class StudyMaterialsViewPage extends StatelessWidget {
         throw Exception('Could not launch $uri');
       }
     }
+  
+  // NEW: Bottom Sheet for Instructor to choose action
+  void _showInstructorOptions(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(
+                'Create New...',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.assignment, color: Colors.deepOrange),
+              title: const Text('Create Assignment'),
+              onTap: () {
+                Navigator.pop(context); // Close bottom sheet
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => CreateAssignmentPage(classId: classId),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.cloud_upload, color: Colors.blue),
+              title: const Text('Upload Study Material'),
+              onTap: () {
+                Navigator.pop(context); // Close bottom sheet
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => UploadMaterialPage(classId: classId),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 10),
+          ],
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -168,14 +218,9 @@ class StudyMaterialsViewPage extends StatelessWidget {
               // --- 4. FLOATING ACTION BUTTON: Conditional Display based on role ---
               floatingActionButton: isUserInstructor
                   ? FloatingActionButton.extended(
-                      onPressed: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (context) => UploadMaterialPage(classId: classId),
-                          ),
-                        );
-                      },
-                      label: const Text('Upload Material'),
+                      // NEW: Use the bottom sheet to show assignment/material options
+                      onPressed: () => _showInstructorOptions(context),
+                      label: const Text('Create'),
                       icon: const Icon(Icons.add),
                       backgroundColor: primaryColor,
                       foregroundColor: Colors.white,
