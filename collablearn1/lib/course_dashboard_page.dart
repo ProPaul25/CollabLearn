@@ -1,10 +1,14 @@
-// lib/course_dashboard_page.dart
+// lib/course_dashboard_page.dart - CORRECTED
 
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart'; // NEW IMPORT
+import 'package:cloud_firestore/cloud_firestore.dart'; // NEW IMPORT
 import 'study_materials_view_page.dart';
 import 'doubt_polls_view_page.dart';
 import 'people_view_page.dart';
 import 'attendance_management_page.dart';
+import 'stream_page.dart'; // NEW IMPORT (for real announcements)
+import 'create_announcement_page.dart'; // NEW IMPORT (for navigation)
 
 class CourseDashboardPage extends StatefulWidget {
   final String classId;
@@ -24,29 +28,25 @@ class CourseDashboardPage extends StatefulWidget {
 
 class _CourseDashboardPageState extends State<CourseDashboardPage> {
   int _selectedIndex = 0;
+  
+  // --- FIX 1: Add a Future to check the user's role ---
+  late final Future<bool> _isInstructorFuture;
 
-  late final List<Widget> _widgetOptions;
+  // --- FIX 2: Helper function to check role ---
+  Future<bool> _isCurrentUserInstructor() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return false;
+    final classDoc = await FirebaseFirestore.instance.collection('classes').doc(widget.classId).get();
+    final data = classDoc.data();
+    if (data == null) return false;
+    return data['instructorId'] == user.uid;
+  }
 
   @override
   void initState() {
     super.initState();
-    _widgetOptions = <Widget>[
-        StreamTab(
-          className: widget.className,
-          classCode: widget.classCode,
-        ),
-      // 1: Classworks
-      StudyMaterialsViewPage(classId: widget.classId),
-      //const Center(child: Text('Classworks Page (Assignments/Quizzes)', style: TextStyle(fontSize: 30))),
-      // 2: People
-      PeopleViewPage(classId: widget.classId),
-      // const Center(child: Text('People Page (Students/Instructor List)', style: TextStyle(fontSize: 30))),
-      // 3: Attendance
-      AttendanceManagementPage(classId: widget.classId),
-      // const Center(child: Text('Attendance Page (QR/Manual System)', style: TextStyle(fontSize: 30))),
-      // 4: Discussion (Doubt Polls) - NOW USING THE REAL PAGE
-      DoubtPollsViewPage(classId: widget.classId), 
-    ];
+    // Initialize the role-checking future
+    _isInstructorFuture = _isCurrentUserInstructor();
   }
 
   void _onItemTapped(int index) {
@@ -67,8 +67,40 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
         elevation: 0,
       ),
       
-      // Display the content of the selected tab
-      body: _widgetOptions.elementAt(_selectedIndex), 
+      // --- FIX 3: Wrap the body in a FutureBuilder to wait for the role ---
+      body: FutureBuilder<bool>(
+        future: _isInstructorFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          // Determine role. Default to 'false' (student) if error
+          final bool isInstructor = snapshot.data ?? false;
+
+          // Define the widget options *inside* the builder
+          final List<Widget> _widgetOptions = <Widget>[
+            // 0: Stream
+            StreamTab(
+              className: widget.className,
+              classCode: widget.classCode,
+              classId: widget.classId,     // Pass classId
+              isInstructor: isInstructor, // Pass the role down
+            ),
+            // 1: Classworks
+            StudyMaterialsViewPage(classId: widget.classId),
+            // 2: People
+            PeopleViewPage(classId: widget.classId),
+            // 3: Attendance
+            AttendanceManagementPage(classId: widget.classId),
+            // 4: Discussion (Doubt Polls)
+            DoubtPollsViewPage(classId: widget.classId), 
+          ];
+
+          // Display the selected tab's content
+          return _widgetOptions.elementAt(_selectedIndex);
+        },
+      ), 
       
       // Implement the Bottom Navigation Bar
       bottomNavigationBar: BottomNavigationBar(
@@ -105,19 +137,21 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
 }
 
 // -------------------------------------------------------------------
-// 1. DEDICATED STREAM TAB WIDGET
+// 1. DEDICATED STREAM TAB WIDGET (NOW MODIFIED)
 // -------------------------------------------------------------------
 
 class StreamTab extends StatelessWidget {
   final String className;
   final String classCode;
+  final String classId;     // <-- NEW: Added to navigate
+  final bool isInstructor; // <-- NEW: Added to check role
 
-  // IMPORTANT: Removed the 'const' constructor here to be safe, 
-  // though the original implementation should have worked.
   const StreamTab({
     super.key,
     required this.className,
     required this.classCode,
+    required this.classId,     // <-- NEW
+    required this.isInstructor, // <-- NEW
   });
 
   @override
@@ -130,95 +164,106 @@ class StreamTab extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 1. Class Info Card (Code Display)
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: primaryColor,
-              borderRadius: BorderRadius.circular(15),
-              boxShadow: [
-                BoxShadow(
-                  color: primaryColor.withOpacity(0.4),
-                  blurRadius: 10,
-                  offset: const Offset(0, 5),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  className,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
+          
+          // --- FIX 4: Conditionally show the Class Info Card ---
+          if (isInstructor)
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: primaryColor,
+                borderRadius: BorderRadius.circular(15),
+                boxShadow: [
+                  BoxShadow(
+                    color: primaryColor.withOpacity(0.4),
+                    blurRadius: 10,
+                    offset: const Offset(0, 5),
                   ),
-                ),
-                const SizedBox(height: 10),
-                const Text(
-                  'Class Code:',
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 16,
-                  ),
-                ),
-                // Correctly displaying the classCode property
-                SelectableText(
-                  classCode, 
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 28,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                const Text(
-                  'Share this code with students to join.',
-                  style: TextStyle(
-                    color: Colors.white54,
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 25),
-
-          // 2. Announcement/Post Input Area
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF1C2237) : Colors.white,
-              borderRadius: BorderRadius.circular(15),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 5,
-                  offset: const Offset(0, 3),
-                ),
-              ],
-            ),
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: primaryColor.withOpacity(0.1),
-                child: Icon(Icons.person, color: primaryColor),
+                ],
               ),
-              title: Text(
-                'Announce something to your class...',
-                style: TextStyle(color: Colors.grey.shade600),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    className,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Class Code:',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 16,
+                    ),
+                  ),
+                  SelectableText(
+                    classCode, 
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 28,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  // This text is now hidden from students
+                  const Text(
+                    'Share this code with students to join.',
+                    style: TextStyle(
+                      color: Colors.white54,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
               ),
-              onTap: () {
-                // TODO: Implement functionality to create a new post/announcement
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Open New Announcement Composer')),
-                );
-              },
             ),
-          ),
-          const SizedBox(height: 25),
+          
+          // --- FIX 5: Add a gap ONLY if the card was shown ---
+          if (isInstructor)
+            const SizedBox(height: 25),
 
-          // 3. Upcoming Events/Assignments Section (Simple List)
+          // --- FIX 6: Conditionally show the "Announce" button ---
+          if (isInstructor)
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1C2237) : Colors.white,
+                borderRadius: BorderRadius.circular(15),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 5,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: primaryColor.withOpacity(0.1),
+                  child: Icon(Icons.person, color: primaryColor),
+                ),
+                title: Text(
+                  'Announce something to your class...',
+                  style: TextStyle(color: Colors.grey.shade600),
+                ),
+                // --- FIX 7: Navigate to the correct page ---
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => CreateAnnouncementPage(classId: classId),
+                    ),
+                  );
+                },
+              ),
+            ),
+          
+          // --- FIX 8: Add a gap ONLY if the button was shown ---
+          if (isInstructor)
+            const SizedBox(height: 25),
+
+          // 3. Upcoming Events/Assignments Section (Visible to everyone)
           Text(
             'Upcoming Activities',
             style: TextStyle(
@@ -230,13 +275,12 @@ class StreamTab extends StatelessWidget {
           const SizedBox(height: 10),
           _buildUpcomingItem(context, 'Assignment 1: Due Tomorrow', Icons.assignment, Colors.orange),
           _buildUpcomingItem(context, 'Quiz on Chapter 3: Friday', Icons.quiz, Colors.blue),
-          _buildUpcomingItem(context, 'Live Lecture: Today @ 4 PM', Icons.live_tv, Colors.green),
           
           const SizedBox(height: 25),
 
-          // 4. Recent Posts/Activity Feed (Placeholders)
+          // 4. Recent Posts/Activity Feed
           Text(
-            'Recent Posts',
+            'Recent Posts', // This title comes from StreamTab
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
@@ -244,15 +288,17 @@ class StreamTab extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          _buildActivityPost(context, 'Instructor posted a new link.', 'A quick reference to the external resources.'),
-          _buildActivityPost(context, 'Student submitted a question.', 'When is the deadline for the final project?'),
-          _buildActivityPost(context, 'System: New Assignment added.', 'Assignment 2: Introduction to Flutter.'),
+          
+          // --- FIX 9: Show REAL announcements, not placeholders ---
+          // This embeds the real announcement list from stream_page.dart
+          StreamPage(classId: classId),
         ],
       ),
     );
   }
 
   Widget _buildUpcomingItem(BuildContext context, String title, IconData icon, Color color) {
+    // ... (This widget is unchanged)
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
@@ -269,99 +315,8 @@ class StreamTab extends StatelessWidget {
       ),
     );
   }
-
-  Widget _buildActivityPost(BuildContext context, String title, String body) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 15),
-      padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1C2237) : Colors.white,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: Colors.grey.withOpacity(0.2)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 5,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            body,
-            style: TextStyle(
-              fontSize: 14,
-              color: isDark ? Colors.white70 : Colors.black87,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              Text(
-                '5 minutes ago',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+  
+  // --- REMOVED _buildActivityPost as it's replaced by the real StreamPage ---
 }
 
-// -------------------------------------------------------------------
-// 2. SIMPLIFIED PLACEHOLDER WIDGET
-// -------------------------------------------------------------------
-
-class _PlaceholderPage extends StatelessWidget {
-  final String title;
-  final IconData icon;
-
-  const _PlaceholderPage({
-    required this.title,
-    required this.icon,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            icon,
-            size: 80,
-            color: Theme.of(context).colorScheme.primary.withOpacity(0.5),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            '$title Tab',
-            style: TextStyle(
-              fontSize: 30,
-              fontWeight: FontWeight.bold,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-          ),
-          const SizedBox(height: 5),
-          const Text(
-            'Content for this tab will go here.',
-            style: TextStyle(fontSize: 16, color: Colors.grey),
-          ),
-        ],
-      ),
-    );
-  }
-}
+// --- REMOVED _PlaceholderPage as it's no longer used ---
