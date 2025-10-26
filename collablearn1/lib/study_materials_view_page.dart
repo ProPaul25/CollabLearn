@@ -2,12 +2,13 @@
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:url_launcher/url_launcher.dart'; // Used to open the file URL
+import 'package:url_launcher/url_launcher.dart'; 
 import 'package:firebase_auth/firebase_auth.dart';
-import 'upload_material_page.dart'; // Import the upload page
-import 'create_assignment_page.dart'; // NEW: Import the assignment creation page
+import 'upload_material_page.dart'; 
+import 'create_assignment_page.dart'; 
+import 'assignment_detail_page.dart'; 
 
-// --- Data Model ---
+// --- Data Models (Keep as is, they are used by AssignmentDetailPage) ---
 class StudyMaterial {
   final String id;
   final String title;
@@ -17,6 +18,7 @@ class StudyMaterial {
   final String uploaderName;
   final Timestamp uploadedOn;
   final String uploaderId;
+  final String type = 'material'; 
 
   StudyMaterial({
     required this.id,
@@ -44,7 +46,57 @@ class StudyMaterial {
     );
   }
 }
-// --- End Data Model ---
+
+class AssignmentItem {
+  final String id;
+  final String title;
+  final String description;
+  final int points;
+  final Timestamp dueDate;
+  final String postedBy;
+  final String courseId;
+  final String type = 'assignment';
+
+  AssignmentItem({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.points,
+    required this.dueDate,
+    required this.postedBy,
+    required this.courseId,
+  });
+
+  factory AssignmentItem.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>?;
+    if (data == null) throw Exception("Assignment data is null");
+    return AssignmentItem(
+      id: doc.id,
+      title: data['title'] ?? 'Untitled Assignment',
+      description: data['description'] ?? 'No instructions.',
+      points: data['points'] ?? 0,
+      dueDate: data['dueDate'] ?? Timestamp.now(),
+      postedBy: data['postedBy'] ?? 'Instructor',
+      courseId: data['courseId'] ?? '',
+    );
+  }
+  
+  // Convert to full Assignment model for navigation
+  Assignment toFullAssignment() {
+    // Note: The Assignment model is defined in assignment_detail_page.dart
+    return Assignment(
+      id: id,
+      title: title,
+      description: description,
+      points: points,
+      dueDate: dueDate,
+      postedBy: postedBy,
+      courseId: courseId,
+    );
+  }
+}
+// --- End Data Models ---
+
 
 class StudyMaterialsViewPage extends StatelessWidget {
   final String classId;
@@ -54,48 +106,40 @@ class StudyMaterialsViewPage extends StatelessWidget {
     required this.classId,
   });
 
+  // --- REPLACED: Simple Streams for each type ---
+  Stream<List<AssignmentItem>> getAssignmentsStream(String courseId) {
+    return FirebaseFirestore.instance
+        .collection('assignments')
+        .where('courseId', isEqualTo: courseId)
+        .orderBy('dueDate', descending: true) // Sort by due date
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map((doc) => AssignmentItem.fromFirestore(doc)).toList());
+  }
+
   Stream<List<StudyMaterial>> getMaterialsStream(String courseId) {
     return FirebaseFirestore.instance
         .collection('study_materials')
         .where('courseId', isEqualTo: courseId)
-        .orderBy('uploadedOn', descending: true)
+        .orderBy('uploadedOn', descending: true) // Sort by upload time
         .snapshots()
-        .map((snapshot) {
-      return snapshot.docs
-          .map((doc) => StudyMaterial.fromFirestore(doc))
-          .toList();
-    });
+        .map((snapshot) => snapshot.docs.map((doc) => StudyMaterial.fromFirestore(doc)).toList());
   }
+  // --- End Simple Streams ---
 
-  // --- Helper Functions ---
 
-  // NOTE: You would typically fetch the user's role from their Firestore document
-  // For this implementation, we will use a basic check for demonstration.
-  // Replace this with your actual role checking logic.
   Future<bool> isCurrentUserInstructor(String instructorId) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return false;
-    
-    // 1. Quick check if the user is the instructor of this specific course
-    if (user.uid == instructorId) return true; 
-
-    // 2. Fallback check (for future: check a 'role' field on the user document)
-    // final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-    // return userDoc.data()?['role'] == 'instructor';
-    
-    return false; // Default to false if neither check passes
+    return user.uid == instructorId;
   }
 
-  // Function to open the file URL
   Future<void> _launchUrl(String url) async {
       final uri = Uri.parse(url);
       if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-        // Use the global function launchUrl and global enum LaunchMode
         throw Exception('Could not launch $uri');
       }
     }
   
-  // NEW: Bottom Sheet for Instructor to choose action
   void _showInstructorOptions(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -117,7 +161,7 @@ class StudyMaterialsViewPage extends StatelessWidget {
               leading: const Icon(Icons.assignment, color: Colors.deepOrange),
               title: const Text('Create Assignment'),
               onTap: () {
-                Navigator.pop(context); // Close bottom sheet
+                Navigator.pop(context); 
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (context) => CreateAssignmentPage(classId: classId),
@@ -129,7 +173,7 @@ class StudyMaterialsViewPage extends StatelessWidget {
               leading: const Icon(Icons.cloud_upload, color: Colors.blue),
               title: const Text('Upload Study Material'),
               onTap: () {
-                Navigator.pop(context); // Close bottom sheet
+                Navigator.pop(context); 
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (context) => UploadMaterialPage(classId: classId),
@@ -144,6 +188,29 @@ class StudyMaterialsViewPage extends StatelessWidget {
     );
   }
 
+  // Helper function to build Study Material Cards
+  Widget _buildMaterialCard(BuildContext context, StudyMaterial material) {
+      return MaterialCard(
+        material: material,
+        onView: () => _launchUrl(material.fileUrl),
+        isUploader: false, // Placeholder
+      );
+  }
+
+  // Helper function to build Assignment Cards
+  Widget _buildAssignmentCard(BuildContext context, AssignmentItem assignment) {
+      return AssignmentCard(
+        assignment: assignment,
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => AssignmentDetailPage(assignment: assignment.toFullAssignment()),
+            ),
+          );
+        },
+      );
+  }
+  
   @override
   Widget build(BuildContext context) {
     final primaryColor = Theme.of(context).colorScheme.primary;
@@ -161,64 +228,77 @@ class StudyMaterialsViewPage extends StatelessWidget {
         final classData = classSnapshot.data!.data()!;
         final instructorId = classData['instructorId'] as String;
 
-        // --- 2. INNER FUTUREBUILDER: Check User Role using instructorId ---
         return FutureBuilder<bool>(
-          // CORRECT CALL: Pass the fetched String (instructorId)
           future: isCurrentUserInstructor(instructorId), 
           builder: (context, roleSnapshot) {
             
-            // Assume student role until the role check completes (or if error occurs)
             final isUserInstructor = roleSnapshot.data ?? false; 
 
-            // --- 3. STREAMBUILDER: Load Study Materials (The main content) ---
             return Scaffold(
-              body: StreamBuilder<List<StudyMaterial>>(
-                stream: getMaterialsStream(classId),
-                builder: (context, materialSnapshot) {
-                  if (materialSnapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  if (materialSnapshot.hasError) {
-                    return Center(child: Text('Error loading materials: ${materialSnapshot.error.toString()}'));
-                  }
-
-                  final materials = materialSnapshot.data ?? [];
-                  final currentUserId = FirebaseAuth.instance.currentUser?.uid;
-
-                  if (materials.isEmpty) {
-                    return Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(20.0),
-                        child: Text(
-                          isUserInstructor 
-                              ? 'No materials uploaded yet. Tap the button to share resources.'
-                              : 'No study materials have been shared for this course.',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(fontSize: 16, color: Colors.grey),
-                        ),
-                      ),
-                    );
-                  }
-
-                  return ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: materials.length,
-                    itemBuilder: (context, index) {
-                      final material = materials[index];
-                      return MaterialCard(
-                        material: material,
-                        onView: () => _launchUrl(material.fileUrl),
-                        isUploader: material.uploaderId == currentUserId,
+              // Using a ListView to contain the two StreamBuilders and headings
+              body: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  
+                  // --- 1. Assignments Section ---
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 10, top: 5),
+                    child: Text('Assignments', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.deepOrange)),
+                  ),
+                  StreamBuilder<List<AssignmentItem>>(
+                    stream: getAssignmentsStream(classId),
+                    builder: (context, assignmentSnapshot) {
+                      if (assignmentSnapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      final assignments = assignmentSnapshot.data ?? [];
+                      
+                      if (assignments.isEmpty) {
+                        return const Padding(
+                          padding: EdgeInsets.only(bottom: 20),
+                          child: Text('No assignments posted yet.', style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic)),
+                        );
+                      }
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: assignments.map((assignment) => _buildAssignmentCard(context, assignment)).toList(),
                       );
                     },
-                  );
-                },
+                  ),
+                  
+                  const Divider(height: 30),
+
+                  // --- 2. Study Materials Section ---
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 10, top: 5),
+                    child: Text('Study Materials', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.blue)),
+                  ),
+                  StreamBuilder<List<StudyMaterial>>(
+                    stream: getMaterialsStream(classId),
+                    builder: (context, materialSnapshot) {
+                      if (materialSnapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      final materials = materialSnapshot.data ?? [];
+
+                      if (materials.isEmpty) {
+                        return const Padding(
+                          padding: EdgeInsets.only(bottom: 20),
+                          child: Text('No study materials uploaded yet.', style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic)),
+                        );
+                      }
+                      
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: materials.map((material) => _buildMaterialCard(context, material)).toList(),
+                      );
+                    },
+                  ),
+                ],
               ),
               
-              // --- 4. FLOATING ACTION BUTTON: Conditional Display based on role ---
               floatingActionButton: isUserInstructor
                   ? FloatingActionButton.extended(
-                      // NEW: Use the bottom sheet to show assignment/material options
                       onPressed: () => _showInstructorOptions(context),
                       label: const Text('Create'),
                       icon: const Icon(Icons.add),
@@ -235,7 +315,7 @@ class StudyMaterialsViewPage extends StatelessWidget {
 }
 
 
-// --- Material Card Widget ---
+// --- Study Material Card Widget (Unchanged) ---
 class MaterialCard extends StatelessWidget {
   final StudyMaterial material;
   final VoidCallback onView;
@@ -290,12 +370,63 @@ class MaterialCard extends StatelessWidget {
     );
   }
   
-  // Simple helper to determine the file icon
   IconData _getIcon(String fileName) {
     if (fileName.endsWith('.pdf')) return Icons.picture_as_pdf;
     if (fileName.endsWith('.pptx') || fileName.endsWith('.ppt')) return Icons.slideshow;
     if (fileName.endsWith('.docx') || fileName.endsWith('.doc')) return Icons.description;
     if (fileName.endsWith('.zip') || fileName.endsWith('.rar')) return Icons.folder_zip;
     return Icons.insert_drive_file;
+  }
+}
+
+// --- Assignment Card Widget (Unchanged) ---
+class AssignmentCard extends StatelessWidget {
+  final AssignmentItem assignment;
+  final VoidCallback onTap;
+
+  const AssignmentCard({
+    super.key,
+    required this.assignment,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isOverdue = DateTime.now().isAfter(assignment.dueDate.toDate());
+    final primaryColor = Theme.of(context).colorScheme.primary;
+    
+    // Format Due Date
+    String formattedDueDate() {
+      final date = assignment.dueDate.toDate();
+      return 'Due: ${date.day}/${date.month} at ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+    }
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 15),
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: isOverdue ? Colors.red.shade300 : Colors.transparent, width: 1)),
+      color: isOverdue ? Colors.red.shade50.withOpacity(0.1) : null,
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: isOverdue ? Colors.red : Colors.deepOrange,
+          child: const Icon(Icons.assignment, color: Colors.white),
+        ),
+        title: Text(assignment.title, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.deepOrange)),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 4),
+            Text('Points: ${assignment.points}', style: TextStyle(color: primaryColor)),
+            const SizedBox(height: 4),
+            Text(
+              formattedDueDate(),
+              style: TextStyle(fontSize: 12, color: isOverdue ? Colors.red : Colors.grey),
+            ),
+          ],
+        ),
+        trailing: Icon(Icons.arrow_forward_ios, size: 16, color: primaryColor),
+        onTap: onTap,
+      ),
+    );
   }
 }

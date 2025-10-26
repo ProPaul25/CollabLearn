@@ -1,15 +1,18 @@
 // lib/course_dashboard_page.dart - FIXED
 
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart'; // NEW IMPORT
-import 'package:cloud_firestore/cloud_firestore.dart'; // NEW IMPORT
-import 'study_materials_view_page.dart'; // Correct file name, original name retained
+import 'package:firebase_auth/firebase_auth.dart'; 
+import 'package:cloud_firestore/cloud_firestore.dart'; 
+import 'study_materials_view_page.dart'; 
 import 'doubt_polls_view_page.dart';
 import 'people_view_page.dart';
 import 'attendance_management_page.dart';
-import 'stream_page.dart'; // NEW IMPORT (for real announcements)
-import 'create_announcement_page.dart'; // NEW IMPORT (for navigation)
-// Removed unused import 'create_assignment_page.dart'
+import 'stream_page.dart'; 
+import 'create_announcement_page.dart'; 
+import 'assignment_detail_page.dart'; 
+// NEW IMPORT: Import AssignmentItem model from study_materials_view_page.dart
+import 'study_materials_view_page.dart' show AssignmentItem; 
+
 
 class CourseDashboardPage extends StatefulWidget {
   final String classId;
@@ -30,10 +33,8 @@ class CourseDashboardPage extends StatefulWidget {
 class _CourseDashboardPageState extends State<CourseDashboardPage> {
   int _selectedIndex = 0;
   
-  // --- FIX 1: Add a Future to check the user's role ---
   late final Future<bool> _isInstructorFuture;
 
-  // --- FIX 2: Helper function to check role ---
   Future<bool> _isCurrentUserInstructor() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return false;
@@ -46,7 +47,6 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
   @override
   void initState() {
     super.initState();
-    // Initialize the role-checking future
     _isInstructorFuture = _isCurrentUserInstructor();
   }
 
@@ -68,7 +68,6 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
         elevation: 0,
       ),
       
-      // --- FIX 3: Wrap the body in a FutureBuilder to wait for the role ---
       body: FutureBuilder<bool>(
         future: _isInstructorFuture,
         builder: (context, snapshot) {
@@ -76,20 +75,18 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
             return const Center(child: CircularProgressIndicator());
           }
 
-          // Determine role. Default to 'false' (student) if error
           final bool isInstructor = snapshot.data ?? false;
 
-          // Define the widget options *inside* the builder
           final List<Widget> _widgetOptions = <Widget>[
             // 0: Stream
             StreamTab(
               className: widget.className,
               classCode: widget.classCode,
-              classId: widget.classId,     // Pass classId
-              isInstructor: isInstructor, // Pass the role down
+              classId: widget.classId,     
+              isInstructor: isInstructor, 
             ),
             // 1: Classworks (uses the existing StudyMaterialsViewPage class)
-            StudyMaterialsViewPage(classId: widget.classId), // FIX: Use correct class name
+            StudyMaterialsViewPage(classId: widget.classId), 
             // 2: People
             PeopleViewPage(classId: widget.classId),
             // 3: Attendance
@@ -98,12 +95,10 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
             DoubtPollsViewPage(classId: widget.classId), 
           ];
 
-          // Display the selected tab's content
           return _widgetOptions.elementAt(_selectedIndex);
         },
       ), 
       
-      // Implement the Bottom Navigation Bar
       bottomNavigationBar: BottomNavigationBar(
         items: const <BottomNavigationBarItem>[
           BottomNavigationBarItem(
@@ -138,22 +133,40 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
 }
 
 // -------------------------------------------------------------------
-// 1. DEDICATED STREAM TAB WIDGET (NOW MODIFIED)
+// 1. DEDICATED STREAM TAB WIDGET (MODIFIED to fetch real upcoming assignments)
 // -------------------------------------------------------------------
 
 class StreamTab extends StatelessWidget {
   final String className;
   final String classCode;
-  final String classId;     // <-- NEW: Added to navigate
-  final bool isInstructor; // <-- NEW: Added to check role
+  final String classId;     
+  final bool isInstructor; 
 
   const StreamTab({
     super.key,
     required this.className,
     required this.classCode,
-    required this.classId,     // <-- NEW
-    required this.isInstructor, // <-- NEW
+    required this.classId,     
+    required this.isInstructor, 
   });
+
+  // NEW: Stream for upcoming assignments (due soonest)
+  Stream<List<AssignmentItem>> _getUpcomingAssignmentsStream(String courseId) {
+    // Fetches assignments ordered by due date, limiting to the next 3
+    return FirebaseFirestore.instance
+        .collection('assignments')
+        .where('courseId', isEqualTo: courseId)
+        // Only show assignments that haven't passed
+        .where('dueDate', isGreaterThan: Timestamp.now()) 
+        .orderBy('dueDate', descending: false)
+        .limit(3)
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs
+          .map((doc) => AssignmentItem.fromFirestore(doc))
+          .toList();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -166,7 +179,7 @@ class StreamTab extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           
-          // --- FIX 4: Conditionally show the Class Info Card ---
+          // --- Class Info Card (Instructor Only) ---
           if (isInstructor)
             Container(
               padding: const EdgeInsets.all(20),
@@ -209,7 +222,6 @@ class StreamTab extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 5),
-                  // This text is now hidden from students
                   const Text(
                     'Share this code with students to join.',
                     style: TextStyle(
@@ -221,11 +233,10 @@ class StreamTab extends StatelessWidget {
               ),
             ),
           
-          // --- FIX 5: Add a gap ONLY if the card was shown ---
           if (isInstructor)
             const SizedBox(height: 25),
 
-          // --- FIX 6: Conditionally show the "Announce" button ---
+          // --- Announce Button (Instructor Only) ---
           if (isInstructor)
             Container(
               padding: const EdgeInsets.all(10),
@@ -243,13 +254,12 @@ class StreamTab extends StatelessWidget {
               child: ListTile(
                 leading: CircleAvatar(
                   backgroundColor: primaryColor.withOpacity(0.1),
-                  child: Icon(Icons.person, color: primaryColor),
+                  child: Icon(Icons.campaign, color: primaryColor),
                 ),
                 title: Text(
                   'Announce something to your class...',
                   style: TextStyle(color: Colors.grey.shade600),
                 ),
-                // --- FIX 7: Navigate to the correct page ---
                 onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
@@ -260,11 +270,10 @@ class StreamTab extends StatelessWidget {
               ),
             ),
           
-          // --- FIX 8: Add a gap ONLY if the button was shown ---
           if (isInstructor)
             const SizedBox(height: 25),
 
-          // 3. Upcoming Events/Assignments Section (Visible to everyone)
+          // --- Upcoming Events/Assignments Section (REAL DATA) ---
           Text(
             'Upcoming Activities',
             style: TextStyle(
@@ -274,14 +283,35 @@ class StreamTab extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          _buildUpcomingItem(context, 'Assignment 1: Due Tomorrow', Icons.assignment, Colors.orange),
-          _buildUpcomingItem(context, 'Quiz on Chapter 3: Friday', Icons.quiz, Colors.blue),
+          
+          StreamBuilder<List<AssignmentItem>>(
+            stream: _getUpcomingAssignmentsStream(classId),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: LinearProgressIndicator());
+              }
+              final upcomingItems = snapshot.data ?? [];
+
+              if (upcomingItems.isEmpty) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Center(child: Text('No upcoming assignments or quizzes.')),
+                );
+              }
+
+              return Column(
+                children: upcomingItems.map((assignment) {
+                  return _buildUpcomingItem(context, assignment);
+                }).toList(),
+              );
+            },
+          ),
           
           const SizedBox(height: 25),
 
-          // 4. Recent Posts/Activity Feed
+          // --- Recent Posts/Activity Feed (Announcements) ---
           Text(
-            'Recent Posts', // This title comes from StreamTab
+            'Recent Posts', 
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
@@ -290,34 +320,47 @@ class StreamTab extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           
-          // --- FIX 9: Show REAL announcements, not placeholders ---
-          // This embeds the real announcement list from stream_page.dart
+          // Show REAL announcements
           StreamPage(classId: classId),
         ],
       ),
     );
   }
 
-  Widget _buildUpcomingItem(BuildContext context, String title, IconData icon, Color color) {
-    // ... (This widget is unchanged)
+  // MODIFIED to take AssignmentItem and navigate to the detail page
+  Widget _buildUpcomingItem(BuildContext context, AssignmentItem assignment) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    String formattedDueDate() {
+      final date = assignment.dueDate.toDate();
+      // Format to show 'Due in X days/hours' or simple date
+      final duration = date.difference(DateTime.now());
+      if (duration.inDays > 0) return 'Due in ${duration.inDays} days';
+      if (duration.inHours > 0) return 'Due in ${duration.inHours} hours';
+      return 'Due Today!';
+    }
+    
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
       color: isDark ? const Color(0xFF1C2237) : Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       elevation: 1,
       child: ListTile(
-        leading: Icon(icon, color: color),
-        title: Text(title),
+        leading: const Icon(Icons.assignment, color: Colors.deepOrange),
+        title: Text(assignment.title),
+        subtitle: Text(formattedDueDate(), style: const TextStyle(color: Colors.orange)),
         trailing: const Icon(Icons.arrow_forward_ios, size: 16),
         onTap: () {
-          // TODO: Navigate to the specific item
+          // Navigate to the Assignment Detail Page for submission
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => AssignmentDetailPage(assignment: assignment.toFullAssignment()),
+            ),
+          );
         },
       ),
     );
   }
-  
-  // --- REMOVED _buildActivityPost as it's replaced by the real StreamPage ---
 }
-
-// --- REMOVED _PlaceholderPage as it's no longer used ---
+// REMOVED: Redundant local model definitions for AssignmentItem and Assignment
+// The models are now imported from study_materials_view_page.dart
