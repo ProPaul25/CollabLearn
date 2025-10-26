@@ -22,10 +22,23 @@ dependencies:
   file_picker: ^8.0.0
   url_launcher: ^6.3.0
   
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/icons/icon.png"
+  adaptive_icon_background: "#2E2E2E"   # choose your background color
+  adaptive_icon_foreground: "assets/icons/icon.png"
+
+flutter_launcher_name:
+  name: "CollabLearn"
+
+
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  rename_app: ^1.6.1
+  flutter_launcher_icons: ^0.13.1
 
 
 flutter:
