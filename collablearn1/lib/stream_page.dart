@@ -64,6 +64,7 @@ class StreamPage extends StatelessWidget {
   }
 
   // 2. Future to fetch Course Metadata (Instructor Name and Student Count)
+  // 2. Future to fetch Course Metadata (Instructor Name and Student Count)
   Future<Map<String, dynamic>> _fetchCourseMetadata(String classId) async {
     final courseDoc = await FirebaseFirestore.instance.collection('classes').doc(classId).get();
     final courseData = courseDoc.data();
@@ -77,11 +78,17 @@ class StreamPage extends StatelessWidget {
     final instructorId = courseData['instructorId'];
     if (instructorId != null) {
       final userDoc = await FirebaseFirestore.instance.collection('users').doc(instructorId).get();
-      instructorName = userDoc.data()?['name'] ?? 'Instructor';
+      
+      // FIX: Read 'firstName' and 'lastName' instead of 'name'
+      final data = userDoc.data();
+      final String firstName = data?['firstName'] ?? '';
+      final String lastName = data?['lastName'] ?? '';
+      final String name = "$firstName $lastName".trim();
+      instructorName = name.isEmpty ? 'Instructor' : name;
     }
 
-    // Calculate Student Count (assumes 'students' is a List field on the class document)
-    final studentsEnrolled = (courseData['students'] as List?)?.length ?? 0;
+    // FIX: Read 'studentIds' instead of 'students'
+    final studentsEnrolled = (courseData['studentIds'] as List?)?.length ?? 0;
     
     return {
       'instructorName': instructorName,

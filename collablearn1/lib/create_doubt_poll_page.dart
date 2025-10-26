@@ -28,11 +28,18 @@ class _CreateDoubtPollPageState extends State<CreateDoubtPollPage> {
   }
 
   // Fetches the current user's name from the 'users' collection
+  // Fetches the current user's name from the 'users' collection
   Future<String> _getCurrentUserName() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-      return userDoc.data()?['name'] ?? user.email ?? 'Unknown User';
+      // FIX: Read 'firstName' and 'lastName' instead of 'name'
+      final data = userDoc.data();
+      final String firstName = data?['firstName'] ?? '';
+      final String lastName = data?['lastName'] ?? '';
+      final String name = "$firstName $lastName".trim();
+      
+      return name.isEmpty ? (user.email ?? 'Unknown User') : name;
     }
     return 'Unknown User';
   }

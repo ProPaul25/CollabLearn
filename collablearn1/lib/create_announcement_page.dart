@@ -30,11 +30,18 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
   }
 
   // Function to get the current user's name
+  // Function to get the current user's name
   Future<String> _getCurrentUserName() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-      return userDoc.data()?['name'] ?? user.email ?? 'Instructor';
+      // FIX: Read 'firstName' and 'lastName' instead of 'name'
+      final data = userDoc.data();
+      final String firstName = data?['firstName'] ?? '';
+      final String lastName = data?['lastName'] ?? '';
+      final String name = "$firstName $lastName".trim();
+
+      return name.isEmpty ? (user.email ?? 'Instructor') : name;
     }
     return 'Instructor';
   }
