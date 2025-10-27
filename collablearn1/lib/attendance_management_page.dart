@@ -1,9 +1,9 @@
-// lib/attendance_management_page.dart
+// lib/attendance_management_page.dart - CORRECTED
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'start_attendance_session_page.dart'; // NEW
+import 'start_attendance_session_page.dart';
 import 'dart:async';
 import 'submit_attendance_page.dart';
 
@@ -60,106 +60,101 @@ class InstructorAttendanceView extends StatefulWidget {
 }
 
 class _InstructorAttendanceViewState extends State<InstructorAttendanceView> {
-  // Logic to show a persistent indicator if an active session exists
-  bool _hasActiveSession = false;
-
-  @override
-  void initState() {
-    super.initState();
-    // This is a simple initial check, a StreamBuilder in the build method 
-    // is better for real-time status.
-  }
+  // --- FIX: REMOVED _hasActiveSession state variable ---
+  // --- FIX: REMOVED initState ---
 
   @override
   Widget build(BuildContext context) {
     final primaryColor = Theme.of(context).colorScheme.primary;
 
-    return Scaffold(
-      body: StreamBuilder<QuerySnapshot>(
-        // Stream past attendance sessions, ordered by most recent
-        stream: FirebaseFirestore.instance
-            .collection('attendance_sessions')
-            .where('courseId', isEqualTo: widget.classId)
-            .orderBy('startTime', descending: true)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
+    // --- FIX: StreamBuilder now wraps the Scaffold ---
+    return StreamBuilder<QuerySnapshot>(
+      // Stream past attendance sessions, ordered by most recent
+      stream: FirebaseFirestore.instance
+          .collection('attendance_sessions')
+          .where('courseId', isEqualTo: widget.classId)
+          .orderBy('startTime', descending: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          // Show a full-scaffold loader while stream connects
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (snapshot.hasError) {
+          return Scaffold(
+            body: Center(child: Text('Error: ${snapshot.error}')),
+          );
+        }
 
-          final sessions = snapshot.data?.docs ?? [];
-          QueryDocumentSnapshot? activeSession;
-          
-          // Check for an active session to control the FAB visibility/state
-          for (var doc in sessions) {
-            final data = doc.data() as Map<String, dynamic>;
-            final endTime = (data['endTime'] as Timestamp).toDate();
-            if (endTime.isAfter(DateTime.now())) {
-                activeSession = doc;
-                break; // Found the active session, stop looking
-            }
+        final sessions = snapshot.data?.docs ?? [];
+        QueryDocumentSnapshot? activeSession;
+        
+        // Check for an active session to control the FAB visibility/state
+        for (var doc in sessions) {
+          final data = doc.data() as Map<String, dynamic>;
+          final endTime = (data['endTime'] as Timestamp).toDate();
+          if (endTime.isAfter(DateTime.now())) {
+              activeSession = doc;
+              break; // Found the active session, stop looking
           }
-          
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              setState(() {
-                _hasActiveSession = activeSession != null;
-              });
-            }
-          });
+        }
+        
+        // --- FIX: This is now a local variable, not state ---
+        final bool hasActiveSession = activeSession != null;
+        
+        // --- FIX: REMOVED the WidgetsBinding.instance.addPostFrameCallback block ---
 
-          if (sessions.isEmpty) {
-            return const Center(
-              child: Text('No attendance sessions created yet.', style: TextStyle(fontSize: 16)),
-            );
-          }
+        return Scaffold(
+          body: sessions.isEmpty
+              ? const Center(
+                  child: Text('No attendance sessions created yet.', style: TextStyle(fontSize: 16)),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: sessions.length,
+                  itemBuilder: (context, index) {
+                    final session = sessions[index].data() as Map<String, dynamic>;
+                    final startTime = (session['startTime'] as Timestamp).toDate();
+                    final endTime = (session['endTime'] as Timestamp).toDate();
+                    final sessionCode = session['sessionCode'];
+                    
+                    final isActive = endTime.isAfter(DateTime.now());
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: sessions.length,
-            itemBuilder: (context, index) {
-              final session = sessions[index].data() as Map<String, dynamic>;
-              final startTime = (session['startTime'] as Timestamp).toDate();
-              final endTime = (session['endTime'] as Timestamp).toDate();
-              final sessionCode = session['sessionCode'];
-              
-              final isActive = endTime.isAfter(DateTime.now());
-
-              return Card(
-                color: isActive ? primaryColor.withOpacity(0.1) : null,
-                child: ListTile(
-                  title: Text('Session: ${startTime.day}/${startTime.month}/${startTime.year}'),
-                  subtitle: Text(isActive
-                      ? 'ACTIVE - Code: $sessionCode (Ends: ${endTime.hour}:${endTime.minute.toString().padLeft(2, '0')})'
-                      : 'Ended: ${startTime.hour}:${startTime.minute.toString().padLeft(2, '0')}'),
-                  trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                  onTap: () {
-                    // Navigate to a details page (optional: to view who marked present)
+                    return Card(
+                      color: isActive ? primaryColor.withOpacity(0.1) : null,
+                      child: ListTile(
+                        title: Text('Session: ${startTime.day}/${startTime.month}/${startTime.year}'),
+                        subtitle: Text(isActive
+                            ? 'ACTIVE - Code: $sessionCode (Ends: ${endTime.hour}:${endTime.minute.toString().padLeft(2, '0')})'
+                            : 'Ended: ${startTime.hour}:${startTime.minute.toString().padLeft(2, '0')}'),
+                        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                        onTap: () {
+                          // Navigate to a details page (optional: to view who marked present)
+                        },
+                      ),
+                    );
                   },
+                ),
+          
+          // Instructor FAB to start a new session
+          // --- FIX: This now uses the local 'hasActiveSession' variable ---
+          floatingActionButton: FloatingActionButton.extended(
+            onPressed: hasActiveSession ? null : () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => StartAttendanceSessionPage(classId: widget.classId),
                 ),
               );
             },
-          );
-        },
-      ),
-      
-      // Instructor FAB to start a new session
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _hasActiveSession ? null : () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (context) => StartAttendanceSessionPage(classId: widget.classId),
-            ),
-          );
-        },
-        label: Text(_hasActiveSession ? 'Active Session Running' : 'Start New Session'),
-        icon: Icon(_hasActiveSession ? Icons.timer : Icons.add_alarm),
-        backgroundColor: _hasActiveSession ? Colors.grey : primaryColor,
-        foregroundColor: Colors.white,
-      ),
+            label: Text(hasActiveSession ? 'Active Session Running' : 'Start New Session'),
+            icon: Icon(hasActiveSession ? Icons.timer : Icons.add_alarm),
+            backgroundColor: hasActiveSession ? Colors.grey : primaryColor,
+            foregroundColor: Colors.white,
+          ),
+        );
+      },
     );
   }
 }
@@ -191,6 +186,19 @@ class StudentAttendanceView extends StatelessWidget {
     return null;
   }
 
+  // --- NEW: Helper to get total session count for percentage ---
+  Future<int> _getTotalSessionCount() async {
+    final snapshot = await FirebaseFirestore.instance
+        .collection('attendance_sessions')
+        .where('courseId', isEqualTo: classId)
+        // Only count sessions that have ended
+        .where('endTime', isLessThan: DateTime.now())
+        .count()
+        .get();
+    
+    return snapshot.count ?? 0;
+  }
+
   @override
   Widget build(BuildContext context) {
     final userId = FirebaseAuth.instance.currentUser!.uid;
@@ -201,72 +209,79 @@ class StudentAttendanceView extends StatelessWidget {
         final activeSessionDoc = activeSessionSnapshot.data;
 
         return Scaffold(
-          body: StreamBuilder<QuerySnapshot>(
-            // Stream the student's own attendance records
-            stream: FirebaseFirestore.instance
-                .collection('attendance_records')
-                .where('studentId', isEqualTo: userId)
-                .snapshots(),
-            builder: (context, recordSnapshot) {
-              if (recordSnapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              if (recordSnapshot.hasError) {
-                return Center(child: Text('Error: ${recordSnapshot.error}'));
-              }
-              
-              final records = recordSnapshot.data?.docs ?? [];
-              final totalPresent = records.length;
-              
-              // This is a simplified view - ideally you'd also need the total number of sessions
-              // We'll use a placeholder for total sessions for now.
-              const totalSessions = 5; 
-              final attendancePercentage = totalSessions > 0 ? (totalPresent / totalSessions * 100).toStringAsFixed(1) : 'N/A';
+          // --- FIX: Use a second FutureBuilder to get the total session count ---
+          body: FutureBuilder<int>(
+            future: _getTotalSessionCount(),
+            builder: (context, totalSessionsSnapshot) {
+
+              return StreamBuilder<QuerySnapshot>(
+                // Stream the student's own attendance records
+                stream: FirebaseFirestore.instance
+                    .collection('attendance_records')
+                    .where('studentId', isEqualTo: userId)
+                    .where('courseId', isEqualTo: classId) // <-- Filter by class
+                    .snapshots(),
+                builder: (context, recordSnapshot) {
+                  if (recordSnapshot.connectionState == ConnectionState.waiting || 
+                      totalSessionsSnapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (recordSnapshot.hasError || totalSessionsSnapshot.hasError) {
+                    return Center(child: Text('Error: ${recordSnapshot.error ?? totalSessionsSnapshot.error}'));
+                  }
+                  
+                  final records = recordSnapshot.data?.docs ?? [];
+                  final totalPresent = records.length;
+                  
+                  // --- FIX: Use the real total session count ---
+                  final totalSessions = totalSessionsSnapshot.data ?? 0; 
+                  final attendancePercentage = totalSessions > 0 ? (totalPresent / totalSessions * 100).toStringAsFixed(0) : '100';
 
 
-              return ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  Card(
-                    color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Your Attendance Summary', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 10),
-                          Text('Total Classes Attended: $totalPresent', style: const TextStyle(fontSize: 16)),
-                          Text('Attendance Percentage: $attendancePercentage%', style: const TextStyle(fontSize: 16)),
-                          // Placeholder for total sessions needs to be fetched from Firestore
-                          Text('Total Sessions (Placeholder): $totalSessions', style: const TextStyle(fontSize: 14, color: Colors.grey)),
-                        ],
+                  return ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      Card(
+                        color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Your Attendance Summary', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 10),
+                              Text('Total Classes Attended: $totalPresent', style: const TextStyle(fontSize: 16)),
+                              Text('Total Sessions Held: $totalSessions', style: const TextStyle(fontSize: 16)),
+                              Text('Attendance Percentage: $attendancePercentage%', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                  
-                  const SizedBox(height: 20),
-                  Text('History', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary)),
-                  const Divider(),
+                      
+                      const SizedBox(height: 20),
+                      Text('History', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary)),
+                      const Divider(),
 
-                  ...records.map((recordDoc) {
-                    final record = recordDoc.data() as Map<String, dynamic>;
-                    final timestamp = (record['timestamp'] as Timestamp).toDate();
-                    return ListTile(
-                      leading: const Icon(Icons.check_circle, color: Colors.green),
-                      title: Text('Present - ${timestamp.day}/${timestamp.month}/${timestamp.year}'),
-                      subtitle: Text('Recorded at: ${timestamp.hour}:${timestamp.minute.toString().padLeft(2, '0')}'),
-                    );
-                  }).toList(),
-                  
-                  if (records.isEmpty) 
-                    const Center(child: Padding(
-                      padding: EdgeInsets.only(top: 20),
-                      child: Text('No attendance records found.', style: TextStyle(color: Colors.grey)),
-                    )),
-                ],
+                      ...records.map((recordDoc) {
+                        final record = recordDoc.data() as Map<String, dynamic>;
+                        final timestamp = (record['timestamp'] as Timestamp).toDate();
+                        return ListTile(
+                          leading: const Icon(Icons.check_circle, color: Colors.green),
+                          title: Text('Present - ${timestamp.day}/${timestamp.month}/${timestamp.year}'),
+                          subtitle: Text('Recorded at: ${timestamp.hour}:${timestamp.minute.toString().padLeft(2, '0')}'),
+                        );
+                      }).toList(),
+                      
+                      if (records.isEmpty) 
+                        const Center(child: Padding(
+                          padding: EdgeInsets.only(top: 20),
+                          child: Text('No attendance records found.', style: TextStyle(color: Colors.grey)),
+                        )),
+                    ],
+                  );
+                },
               );
-            },
+            }
           ),
           // Student FAB to submit code if a session is active
           floatingActionButton: activeSessionDoc != null
@@ -284,7 +299,7 @@ class StudentAttendanceView extends StatelessWidget {
                   },
                   label: const Text('Submit Attendance Code'),
                   icon: const Icon(Icons.code),
-                  backgroundColor: Theme.of(context).colorScheme.secondary,
+                  backgroundColor: Theme.of(context).colorScheme.primary, // Changed color for consistency
                   foregroundColor: Colors.white,
                 )
               : null,
