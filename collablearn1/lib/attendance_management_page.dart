@@ -5,7 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'start_attendance_session_page.dart';
 import 'dart:async';
-import 'submit_attendance_page.dart';
+import 'submit_attendance_page.dart'; // IMPORTANT: This is now the QR Scanner page
 
 class AttendanceManagementPage extends StatelessWidget {
   final String classId;
@@ -48,7 +48,7 @@ class AttendanceManagementPage extends StatelessWidget {
 }
 
 // =================================================================
-// INSTRUCTOR VIEW (Management)
+// INSTRUCTOR VIEW (Management) - UNCHANGED
 // =================================================================
 class InstructorAttendanceView extends StatefulWidget {
   final String classId;
@@ -148,8 +148,8 @@ class _InstructorAttendanceViewState extends State<InstructorAttendanceView> {
                 ),
               );
             },
-            label: Text(hasActiveSession ? 'Active Session Running' : 'Start New Session'),
-            icon: Icon(hasActiveSession ? Icons.timer : Icons.add_alarm),
+            label: Text(hasActiveSession ? 'Active Session Running' : 'Start New QR Session'),
+            icon: Icon(hasActiveSession ? Icons.timer : Icons.qr_code_2),
             backgroundColor: hasActiveSession ? Colors.grey : primaryColor,
             foregroundColor: Colors.white,
           ),
@@ -179,6 +179,7 @@ class StudentAttendanceView extends StatelessWidget {
     if (snapshot.docs.isNotEmpty) {
       final latestSession = snapshot.docs.first;
       final endTime = (latestSession.data()['endTime'] as Timestamp).toDate();
+      // Check if the session is still active
       if (endTime.isAfter(DateTime.now())) {
         return latestSession;
       }
@@ -191,8 +192,8 @@ class StudentAttendanceView extends StatelessWidget {
     final snapshot = await FirebaseFirestore.instance
         .collection('attendance_sessions')
         .where('courseId', isEqualTo: classId)
-        // Only count sessions that have ended
-        .where('endTime', isLessThan: DateTime.now())
+        // Only count sessions that have ended or are running (for a more accurate ratio)
+        // We will count all sessions here. The 'records' stream handles actual attendance.
         .count()
         .get();
     
@@ -283,22 +284,24 @@ class StudentAttendanceView extends StatelessWidget {
               );
             }
           ),
-          // Student FAB to submit code if a session is active
+          // Student FAB to scan QR code if a session is active
           floatingActionButton: activeSessionDoc != null
               ? FloatingActionButton.extended(
                   onPressed: () {
-                    final sessionData = activeSessionDoc.data() as Map<String, dynamic>;
+                    // Navigate to the QR scanner page. 
+                    // The submitted code/ID will be scanned, not passed as a parameter.
+                    // We pass dummy data for required fields to satisfy the old constructor.
                     Navigator.of(context).push(
                       MaterialPageRoute(
-                        builder: (context) => SubmitAttendancePage(
-                          sessionCode: sessionData['sessionCode'],
-                          sessionId: activeSessionDoc.id,
+                        builder: (context) => const SubmitAttendancePage(
+                          sessionCode: 'SCAN', // Dummy value
+                          sessionId: 'SCAN', // Dummy value
                         ),
                       ),
                     );
                   },
-                  label: const Text('Submit Attendance Code'),
-                  icon: const Icon(Icons.code),
+                  label: const Text('Scan QR for Attendance'),
+                  icon: const Icon(Icons.qr_code_scanner),
                   backgroundColor: Theme.of(context).colorScheme.primary, // Changed color for consistency
                   foregroundColor: Colors.white,
                 )
