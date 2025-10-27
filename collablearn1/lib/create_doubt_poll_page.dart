@@ -28,7 +28,6 @@ class _CreateDoubtPollPageState extends State<CreateDoubtPollPage> {
   }
 
   // Fetches the current user's name from the 'users' collection
-  // Fetches the current user's name from the 'users' collection
   Future<String> _getCurrentUserName() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
@@ -61,6 +60,7 @@ class _CreateDoubtPollPageState extends State<CreateDoubtPollPage> {
         'postedOn': Timestamp.now(),
         'answersCount': 0, // Initialize count for sorting/display
         'upvotes': 0, // Initialize upvotes for the question itself
+        'upvotedBy': [] // <-- THIS IS THE CORRECTED LINE
       });
 
       if (mounted) {
