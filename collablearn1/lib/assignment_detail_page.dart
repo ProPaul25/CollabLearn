@@ -1,14 +1,26 @@
-// lib/assignment_detail_page.dart
+// lib/assignment_detail_page.dart - FINAL CLOUDINARY UPLOAD FIX (v7)
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb; // For web/mobile file handling
-import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb; 
+import 'dart:typed_data'; // Required for ByteData/Uint8List manipulation
 
-// Simplified Assignment Model (redefined here for clarity, though typically in a model file)
+// --- CLOUDINARY DEPENDENCY & INITIALIZATION ---
+import 'package:cloudinary_public/cloudinary_public.dart'; 
+
+const String _CLOUD_NAME = 'dc51dx2da'; 
+const String _UPLOAD_PRESET = 'CollabLearn'; 
+
+final CloudinaryPublic cloudinary = CloudinaryPublic(
+  _CLOUD_NAME,
+  _UPLOAD_PRESET,
+  cache: false,
+);
+// ----------------------------------------------
+
+// Simplified Assignment Model (unchanged)
 class Assignment {
   final String id;
   final String title;
@@ -51,17 +63,14 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
     _fetchSubmissionStatus();
   }
 
-  // Helper to format timestamp
   String _formatDueDate(Timestamp timestamp) {
     DateTime date = timestamp.toDate();
     return '${date.day}/${date.month}/${date.year} at ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
   }
 
-  // --- 1. FETCH SUBMISSION STATUS ---
   Future<void> _fetchSubmissionStatus() async {
     if (user == null) return;
 
-    // Check for an existing submission record for this user and assignment
     final query = await FirebaseFirestore.instance
         .collection('assignment_submissions')
         .where('assignmentId', isEqualTo: widget.assignment.id)
@@ -82,11 +91,10 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
     }
   }
   
-  // --- 2. PICK FILE ---
   Future<void> _pickFile() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['pdf', 'docx', 'doc', 'txt', 'zip', 'png', 'jpg'], // Common doc formats
+      allowedExtensions: ['pdf', 'docx', 'doc', 'txt', 'zip', 'png', 'jpg'],
     );
 
     if (result != null) {
@@ -98,7 +106,7 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
     }
   }
 
-  // --- 3. UPLOAD AND SUBMIT ---
+  // --- 3. UPLOAD AND SUBMIT (MODIFIED CLOUDINARY LOGIC) ---
   Future<void> _uploadAndSubmit() async {
     if (_pickedFile == null) {
       if (mounted) {
@@ -112,7 +120,7 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
     if (DateTime.now().isAfter(widget.assignment.dueDate.toDate())) {
        if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Submission failed: The due date has passed.'), backgroundColor: Colors.red),
+          const SnackBar(content: Text('Submission failed: The due date has passed. If late submissions are allowed, please contact your instructor.'), backgroundColor: Colors.red),
         );
       }
       return;
@@ -125,34 +133,58 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
 
     try {
       final submissionTime = Timestamp.now();
-      final storagePath = 'submissions/${widget.assignment.courseId}/${widget.assignment.id}/${user!.uid}_${_pickedFile!.name}';
-      final storageRef = FirebaseStorage.instance.ref().child(storagePath);
       
-      // Determine upload method (Web vs. Mobile)
-      UploadTask uploadTask;
-      final SettableMetadata metadata = SettableMetadata(contentType: 'application/octet-stream');
-
-      if (kIsWeb) {
-        uploadTask = storageRef.putData(_pickedFile!.bytes!, metadata);
+      CloudinaryResourceType resourceType;
+      if (_pickedFile!.extension!.contains('pdf') || _pickedFile!.extension!.contains('doc') || _pickedFile!.extension!.contains('txt') || _pickedFile!.extension!.contains('zip') || _pickedFile!.extension!.contains('pptx')) {
+          resourceType = CloudinaryResourceType.Raw; 
       } else {
-        uploadTask = storageRef.putFile(File(_pickedFile!.path!), metadata);
+          resourceType = CloudinaryResourceType.Image;
       }
-
-      uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
-        if (mounted) {
-          setState(() {
-            _uploadProgress = snapshot.bytesTransferred.toDouble() / snapshot.totalBytes.toDouble();
-          });
-        }
-      });
-
-      final snapshot = await uploadTask;
-      final downloadUrl = await snapshot.ref.getDownloadURL();
       
-      // Get student name for easy instructor view
+      // 1. Upload to Cloudinary
+      CloudinaryFile fileToUpload;
+      
+      if (kIsWeb) {
+        if (_pickedFile!.bytes == null) throw Exception("File bytes missing for web upload.");
+        // FIX: Removed unsupported 'extension' parameter
+        fileToUpload = CloudinaryFile.fromByteData(
+          _pickedFile!.bytes!.buffer.asByteData(), 
+          resourceType: resourceType,
+          folder: 'collablearn/submissions/${widget.assignment.courseId}/${widget.assignment.id}',
+          publicId: '${user!.uid}_${widget.assignment.id}',
+          identifier: _pickedFile!.name, 
+        );
+      } else {
+        if (_pickedFile!.path == null) throw Exception("File path missing for mobile upload.");
+        // FIX: Removed unsupported 'extension' parameter
+        fileToUpload = CloudinaryFile.fromFile(
+          _pickedFile!.path!, 
+          resourceType: resourceType,
+          folder: 'collablearn/submissions/${widget.assignment.courseId}/${widget.assignment.id}',
+          publicId: '${user!.uid}_${widget.assignment.id}',
+        );
+      }
+      
+      final CloudinaryResponse response = await cloudinary.uploadFile(
+        fileToUpload,
+        onProgress: (count, total) {
+          if (mounted) {
+            setState(() {
+              _uploadProgress = count / total;
+            });
+          }
+        },
+      );
+      
+      if (response.secureUrl.isEmpty) {
+          throw Exception("Cloudinary upload failed to return a secure URL.");
+      }
+      
+      final downloadUrl = response.secureUrl; 
+      final cloudinaryPublicId = response.publicId; 
+
       final userDoc = await FirebaseFirestore.instance.collection('users').doc(user!.uid).get();
       final studentName = '${userDoc.data()?['firstName'] ?? ''} ${userDoc.data()?['lastName'] ?? ''}'.trim();
-
 
       // 4. Save/Update Submission Record in Firestore
       final submissionData = {
@@ -161,15 +193,14 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
         'studentId': user!.uid,
         'studentName': studentName,
         'submittedFileUrl': downloadUrl,
+        'cloudinaryPublicId': cloudinaryPublicId, 
         'submittedFileName': _pickedFile!.name,
         'submissionTime': submissionTime,
         'graded': false,
         'score': null,
       };
 
-      // Check if this is an update (re-submission) or a new submission
       if (_currentSubmission != null) {
-        // Update existing record
         final existingRef = await FirebaseFirestore.instance
           .collection('assignment_submissions')
           .where('assignmentId', isEqualTo: widget.assignment.id)
@@ -181,16 +212,21 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
           await existingRef.docs.first.reference.update(submissionData);
         }
       } else {
-        // New submission
         await FirebaseFirestore.instance.collection('assignment_submissions').add(submissionData);
       }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Assignment submitted successfully!'), backgroundColor: Colors.green),
+          const SnackBar(content: Text('Assignment submitted successfully!'), backgroundColor: Colors.green),
         );
-        _fetchSubmissionStatus(); // Refresh status immediately
-        _pickedFile = null; // Clear picked file
+        _fetchSubmissionStatus(); 
+        _pickedFile = null; 
+      }
+    } on CloudinaryException catch (e) {
+       if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Cloudinary submission failed: ${e.message}'), backgroundColor: Colors.red),
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -305,7 +341,7 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
             if (_isLoading)
               Column(
                 children: [
-                  LinearProgressIndicator(value: _uploadProgress, color: primaryColor),
+                  LinearProgressIndicator(value: _uploadProgress.clamp(0.0, 1.0), color: primaryColor),
                   Padding(
                     padding: const EdgeInsets.only(top: 8.0),
                     child: Text('${(_uploadProgress * 100).toStringAsFixed(0)}% Uploading...'),

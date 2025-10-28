@@ -1,12 +1,25 @@
-// lib/upload_material_page.dart
+// lib/upload_material_page.dart - FINAL CLOUDINARY UPLOAD FIX (v7)
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:file_picker/file_picker.dart';
-import 'dart:io';
-import 'package:flutter/foundation.dart' show kIsWeb; // NEW IMPORT
+import 'package:flutter/foundation.dart' show kIsWeb; 
+import 'dart:typed_data'; // Required for ByteData/Uint8List manipulation
+
+// --- CLOUDINARY DEPENDENCY & INITIALIZATION ---
+import 'package:cloudinary_public/cloudinary_public.dart'; 
+
+const String _CLOUD_NAME = 'dc51dx2da'; 
+const String _UPLOAD_PRESET = 'CollabLearn'; 
+
+final CloudinaryPublic cloudinary = CloudinaryPublic(
+  _CLOUD_NAME,
+  _UPLOAD_PRESET,
+  cache: false,
+);
+// ------------------------------------
+
 
 class UploadMaterialPage extends StatefulWidget {
   final String classId;
@@ -26,7 +39,8 @@ class _UploadMaterialPageState extends State<UploadMaterialPage> {
   final _descriptionController = TextEditingController();
   PlatformFile? _pickedFile;
   bool _isLoading = false;
-  double _uploadProgress = 0;
+  double _uploadProgress = 0; 
+
 
   @override
   void dispose() {
@@ -35,21 +49,22 @@ class _UploadMaterialPageState extends State<UploadMaterialPage> {
     super.dispose();
   }
 
-  // Helper to fetch the current user's name
   Future<String> _getCurrentUserName() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-      return userDoc.data()?['name'] ?? 'Instructor';
+      final data = userDoc.data();
+      final String firstName = data?['firstName'] ?? '';
+      final String lastName = data?['lastName'] ?? '';
+      final String name = "$firstName $lastName".trim();
+      return name.isEmpty ? (user.email ?? 'Instructor') : name;
     }
     return 'Instructor';
   }
 
-  // --- 1. PICK FILE ---
   Future<void> _pickFile() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      // You can add more allowed extensions here
       allowedExtensions: ['pdf', 'pptx', 'docx', 'zip', 'jpg', 'png'],
     );
 
@@ -60,13 +75,13 @@ class _UploadMaterialPageState extends State<UploadMaterialPage> {
     }
   }
 
-  // --- 2. UPLOAD & SUBMIT (FIXED FOR WEB) ---
+
+  // --- 2. UPLOAD & SUBMIT (MODIFIED CLOUDINARY LOGIC) ---
   Future<void> _uploadAndSubmit() async {
     if (!_formKey.currentState!.validate() || _pickedFile == null) {
-      // ... (validation code)
       return;
     }
-
+    
     setState(() {
       _isLoading = true;
       _uploadProgress = 0;
@@ -75,49 +90,61 @@ class _UploadMaterialPageState extends State<UploadMaterialPage> {
     try {
       final user = FirebaseAuth.instance.currentUser;
       final userName = await _getCurrentUserName();
-      final storageRef = FirebaseStorage.instance.ref()
-          .child('course_materials/${widget.classId}/${_pickedFile!.name}');
+      
+      CloudinaryResourceType resourceType;
+      if (_pickedFile!.extension!.contains('pdf') || _pickedFile!.extension!.contains('doc') || _pickedFile!.extension!.contains('zip') || _pickedFile!.extension!.contains('pptx')) {
+          resourceType = CloudinaryResourceType.Raw; 
+      } else {
+          resourceType = CloudinaryResourceType.Image;
+      }
+      
+      // 1. Upload to Cloudinary
+      CloudinaryFile fileToUpload;
 
-      // 1. Choose the correct upload method based on the platform
-      UploadTask uploadTask;
-      
-      // Define metadata with a fallback content type.
-      final SettableMetadata metadata = SettableMetadata(
-          // Using a generic binary type is safe. Firebase will often infer a better type.
-          contentType: 'application/octet-stream' 
-      );
-      
       if (kIsWeb) {
-        // FIX: Use putData() with the file bytes and the safe metadata.
-        uploadTask = storageRef.putData(
-          _pickedFile!.bytes!,
-          metadata, // Use the fallback metadata
+        if (_pickedFile!.bytes == null) throw Exception("File bytes missing for web upload.");
+        // FIX: Removed unsupported 'extension' parameter
+        fileToUpload = CloudinaryFile.fromByteData(
+          _pickedFile!.bytes!.buffer.asByteData(), 
+          resourceType: resourceType,
+          folder: 'collablearn/materials/${widget.classId}',
+          identifier: _pickedFile!.name, 
         );
       } else {
-        // For mobile/desktop, use putFile() with the file path
-        // The content type is often inferred better on mobile/desktop
-        uploadTask = storageRef.putFile(
-          File(_pickedFile!.path!),
-          metadata,
+        if (_pickedFile!.path == null) throw Exception("File path missing for mobile upload.");
+        // FIX: Removed unsupported 'extension' parameter
+        fileToUpload = CloudinaryFile.fromFile(
+          _pickedFile!.path!, 
+          resourceType: resourceType,
+          folder: 'collablearn/materials/${widget.classId}',
         );
       }
 
-      // ... (rest of the upload and Firestore logic)
-      uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
-        setState(() {
-          _uploadProgress = snapshot.bytesTransferred.toDouble() / snapshot.totalBytes.toDouble();
-        });
-      });
 
-      // Wait for upload completion and get download URL
-      final snapshot = await uploadTask;
-      final downloadUrl = await snapshot.ref.getDownloadURL();
+      final CloudinaryResponse response = await cloudinary.uploadFile(
+        fileToUpload,
+        onProgress: (count, total) {
+          if (mounted) {
+            setState(() {
+              _uploadProgress = count / total;
+            });
+          }
+        },
+      );
+      
+      if (response.secureUrl.isEmpty) {
+          throw Exception("Cloudinary upload failed to return a secure URL.");
+      }
+      
+      final downloadUrl = response.secureUrl;
+      final cloudinaryPublicId = response.publicId;
 
       // 2. Save metadata to Firestore
       await FirebaseFirestore.instance.collection('study_materials').add({
         'title': _titleController.text.trim(),
         'description': _descriptionController.text.trim(),
-        'fileUrl': downloadUrl,
+        'fileUrl': downloadUrl, // <-- CLOUDINARY SECURE URL
+        'cloudinaryPublicId': cloudinaryPublicId, // <-- New Field
         'fileName': _pickedFile!.name,
         'fileSize': _pickedFile!.size,
         'fileExtension': _pickedFile!.extension,
@@ -131,6 +158,12 @@ class _UploadMaterialPageState extends State<UploadMaterialPage> {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Study material uploaded successfully!')),
+        );
+      }
+    } on CloudinaryException catch (e) {
+       if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Cloudinary upload failed: ${e.message}'), backgroundColor: Colors.red),
         );
       }
     } catch (e) {
@@ -207,7 +240,7 @@ class _UploadMaterialPageState extends State<UploadMaterialPage> {
               if (_isLoading)
                 Column(
                   children: [
-                    LinearProgressIndicator(value: _uploadProgress, color: primaryColor),
+                    LinearProgressIndicator(value: _uploadProgress.clamp(0.0, 1.0), color: primaryColor),
                     Padding(
                       padding: const EdgeInsets.only(top: 8.0),
                       child: Text('${(_uploadProgress * 100).toStringAsFixed(0)}% Uploaded'),

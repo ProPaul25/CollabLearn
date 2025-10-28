@@ -2,7 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart'; // <--- ADDED: Fixes the yellow underlint if it appears here
+import 'package:firebase_auth/firebase_auth.dart'; 
 import 'package:url_launcher/url_launcher.dart';
 import 'study_materials_view_page.dart'; // Import AssignmentItem model
 
@@ -119,6 +119,7 @@ class _StudentSubmissionDetailState extends State<StudentSubmissionDetail> {
           return const Scaffold(body: Center(child: Text('Submission not found.')));
         }
 
+        // --- NEW: submissionData['submittedFileUrl'] now holds the Cloudinary URL ---
         final fileUrl = submissionData['submittedFileUrl'] as String? ?? '';
         final fileName = submissionData['submittedFileName'] as String? ?? 'Submission File';
         final isGraded = submissionData['graded'] ?? false;
@@ -157,6 +158,7 @@ class _StudentSubmissionDetailState extends State<StudentSubmissionDetail> {
                       title: Text(fileName, style: const TextStyle(fontWeight: FontWeight.bold)),
                       subtitle: Text('Submitted on: ${(submissionData['submissionTime'] as Timestamp).toDate().toString().split('.')[0]}'),
                       trailing: const Icon(Icons.open_in_new),
+                      // This tap uses the Cloudinary URL
                       onTap: fileUrl.isNotEmpty ? () => _launchUrl(fileUrl) : null,
                     ),
                   ),
@@ -216,7 +218,7 @@ class _StudentSubmissionDetailState extends State<StudentSubmissionDetail> {
                     decoration: const InputDecoration(
                       labelText: 'Review/Feedback (Optional)',
                       hintText: 'Provide constructive feedback here...',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
+                      border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
                       alignLabelWithHint: true,
                     ),
                   ),
@@ -224,7 +226,6 @@ class _StudentSubmissionDetailState extends State<StudentSubmissionDetail> {
 
                   // --- Current Status Display ---
                   Card(
-                    // FIX: Replaced Colors.withOpacity(0.1) with 0x1A alpha value for green/red
                     color: isGraded 
                         ? const Color(0x1A4CAF50) // Semi-transparent Green
                         : const Color(0x1AF44336), // Semi-transparent Red

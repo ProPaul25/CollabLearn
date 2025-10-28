@@ -8,12 +8,13 @@ import 'upload_material_page.dart';
 import 'create_assignment_page.dart'; 
 import 'assignment_detail_page.dart'; 
 
-// --- Data Models (Keep as is, they are used by AssignmentDetailPage) ---
+// --- Data Models (Update StudyMaterial) ---
 class StudyMaterial {
   final String id;
   final String title;
   final String description;
   final String fileUrl;
+  final String cloudinaryPublicId; // <-- NEW FIELD
   final String fileName;
   final String uploaderName;
   final Timestamp uploadedOn;
@@ -25,6 +26,7 @@ class StudyMaterial {
     required this.title,
     required this.description,
     required this.fileUrl,
+    required this.cloudinaryPublicId, // <-- NEW FIELD
     required this.fileName,
     required this.uploaderName,
     required this.uploadedOn,
@@ -38,7 +40,8 @@ class StudyMaterial {
       id: doc.id,
       title: data['title'] ?? 'Untitled Material',
       description: data['description'] ?? 'No description provided.',
-      fileUrl: data['fileUrl'] ?? '',
+      fileUrl: data['fileUrl'] ?? '', // This now holds the Cloudinary URL
+      cloudinaryPublicId: data['cloudinaryPublicId'] ?? '', // <-- NEW FIELD
       fileName: data['fileName'] ?? 'file',
       uploaderName: data['uploaderName'] ?? 'Unknown Uploader',
       uploadedOn: data['uploadedOn'] ?? Timestamp.now(),
@@ -84,6 +87,7 @@ class AssignmentItem {
   // Convert to full Assignment model for navigation
   Assignment toFullAssignment() {
     // Note: The Assignment model is defined in assignment_detail_page.dart
+    // Assuming the file paths were updated correctly in assignment_detail_page.dart
     return Assignment(
       id: id,
       title: title,
@@ -191,8 +195,9 @@ class StudyMaterialsViewPage extends StatelessWidget {
   // Helper function to build Study Material Cards
   Widget _buildMaterialCard(BuildContext context, StudyMaterial material) {
       return MaterialCard(
+        // NOTE: The onView callback uses material.fileUrl, which now holds the Cloudinary URL
         material: material,
-        onView: () => _launchUrl(material.fileUrl),
+        onView: () => _launchUrl(material.fileUrl), 
         isUploader: false, // Placeholder
       );
   }
@@ -315,7 +320,7 @@ class StudyMaterialsViewPage extends StatelessWidget {
 }
 
 
-// --- Study Material Card Widget (Unchanged) ---
+// --- Study Material Card Widget (Unchanged logic, relies on the updated model) ---
 class MaterialCard extends StatelessWidget {
   final StudyMaterial material;
   final VoidCallback onView;

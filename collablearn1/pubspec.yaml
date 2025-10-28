@@ -24,6 +24,7 @@ dependencies:
   file_picker: ^8.0.0
   url_launcher: ^6.3.0
   intl: ^0.20.2
+  cloudinary_public: ^0.23.1
   
 flutter_icons:
   android: true
