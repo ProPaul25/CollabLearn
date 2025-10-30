@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'start_attendance_session_page.dart';
 import 'dart:async';
 import 'submit_attendance_page.dart'; // IMPORTANT: This is now the QR Scanner page
+import 'attendance_report_page.dart';
 
 class AttendanceManagementPage extends StatelessWidget {
   final String classId;
@@ -52,6 +53,11 @@ class AttendanceManagementPage extends StatelessWidget {
 // =================================================================
 // INSTRUCTOR VIEW (Management) - STABLE VERSION
 // Note: Changed from StatefulWidget to StatelessWidget
+// =================================================================
+// lib/attendance_management_page.dart (InstructorAttendanceView)
+
+// =================================================================
+// INSTRUCTOR VIEW (Management) - STABLE & CORRECTED VERSION
 // =================================================================
 class InstructorAttendanceView extends StatelessWidget {
   final String classId;
@@ -103,6 +109,7 @@ class InstructorAttendanceView extends StatelessWidget {
           );
         }
 
+        // --- START OF CORRECT SCAFFOLD WITH LISTVIEW ---
         return Scaffold(
           body: ListView.builder(
             padding: const EdgeInsets.all(16),
@@ -124,15 +131,28 @@ class InstructorAttendanceView extends StatelessWidget {
                       : 'Ended: ${startTime.hour}:${startTime.minute.toString().padLeft(2, '0')}'),
                   trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                   onTap: () {
-                    // TODO: Navigate to a details page
+                    final sessionDocId = sessions[index].id;
+                    final sessionDate = '${startTime.day}/${startTime.month}/${startTime.year}';
+                    
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => AttendanceReportPage(
+                          classId: classId,
+                          sessionId: sessionDocId,
+                          sessionTitle: 'Session on $sessionDate',
+                        ),
+                      ),
+                    );
                   },
                 ),
               );
             },
           ),
+          
           // FAB is outside the ListView, correctly placed in the Scaffold
           floatingActionButton: _buildFab(context, classId, hasActiveSession, primaryColor),
         );
+        // --- END OF CORRECT SCAFFOLD WITH LISTVIEW ---
       },
     );
   }
@@ -141,8 +161,6 @@ class InstructorAttendanceView extends StatelessWidget {
   Widget _buildFab(BuildContext context, String classId, bool hasActiveSession, Color primaryColor) {
     return FloatingActionButton.extended(
       onPressed: hasActiveSession ? null : () {
-        // NOTE: Ensure you have 'StartAttendanceSessionPage' imported
-        // and defined in your project to avoid errors.
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (context) => StartAttendanceSessionPage(classId: classId),
