@@ -344,6 +344,8 @@ class _LoginPageState extends State<LoginPage> {
       child: TextField(
         controller: _passwordController,
         obscureText: !_isPasswordVisible,
+        textInputAction: TextInputAction.done,
+        onSubmitted: (_) => _login(),
         decoration: InputDecoration(
           hintText: 'Password',
           contentPadding: const EdgeInsets.symmetric(vertical: 18),
