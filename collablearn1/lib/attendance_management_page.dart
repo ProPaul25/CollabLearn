@@ -47,114 +47,112 @@ class AttendanceManagementPage extends StatelessWidget {
   }
 }
 
+// lib/attendance_management_page.dart (InstructorAttendanceView)
+
 // =================================================================
-// INSTRUCTOR VIEW (Management) - UNCHANGED
+// INSTRUCTOR VIEW (Management) - STABLE VERSION
+// Note: Changed from StatefulWidget to StatelessWidget
 // =================================================================
-class InstructorAttendanceView extends StatefulWidget {
+class InstructorAttendanceView extends StatelessWidget {
   final String classId;
 
   const InstructorAttendanceView({super.key, required this.classId});
 
   @override
-  State<InstructorAttendanceView> createState() => _InstructorAttendanceViewState();
-}
-
-class _InstructorAttendanceViewState extends State<InstructorAttendanceView> {
-  // --- FIX: REMOVED _hasActiveSession state variable ---
-  // --- FIX: REMOVED initState ---
-
-  @override
   Widget build(BuildContext context) {
     final primaryColor = Theme.of(context).colorScheme.primary;
 
-    // --- FIX: StreamBuilder now wraps the Scaffold ---
+    // 1. StreamBuilder handles all rebuilds based on Firestore data
     return StreamBuilder<QuerySnapshot>(
       // Stream past attendance sessions, ordered by most recent
       stream: FirebaseFirestore.instance
           .collection('attendance_sessions')
-          .where('courseId', isEqualTo: widget.classId)
+          .where('courseId', isEqualTo: classId)
           .orderBy('startTime', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          // Show a full-scaffold loader while stream connects
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
+          return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasError) {
-          return Scaffold(
-            body: Center(child: Text('Error: ${snapshot.error}')),
-          );
+          return Center(child: Text('Error: ${snapshot.error}'));
         }
 
         final sessions = snapshot.data?.docs ?? [];
         QueryDocumentSnapshot? activeSession;
         
-        // Check for an active session to control the FAB visibility/state
+        // 2. Find the active session using a simple loop (No setState!)
         for (var doc in sessions) {
           final data = doc.data() as Map<String, dynamic>;
           final endTime = (data['endTime'] as Timestamp).toDate();
           if (endTime.isAfter(DateTime.now())) {
-              activeSession = doc;
-              break; // Found the active session, stop looking
+            activeSession = doc;
+            break; 
           }
         }
         
-        // --- FIX: This is now a local variable, not state ---
-        final bool hasActiveSession = activeSession != null;
-        
-        // --- FIX: REMOVED the WidgetsBinding.instance.addPostFrameCallback block ---
+        // 3. Derive state locally and use it to control the FAB
+        final hasActiveSession = activeSession != null; 
+
+        if (sessions.isEmpty) {
+          return Scaffold(
+            body: const Center(
+              child: Text('No attendance sessions created yet.', style: TextStyle(fontSize: 16)),
+            ),
+            floatingActionButton: _buildFab(context, classId, hasActiveSession, primaryColor),
+          );
+        }
 
         return Scaffold(
-          body: sessions.isEmpty
-              ? const Center(
-                  child: Text('No attendance sessions created yet.', style: TextStyle(fontSize: 16)),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: sessions.length,
-                  itemBuilder: (context, index) {
-                    final session = sessions[index].data() as Map<String, dynamic>;
-                    final startTime = (session['startTime'] as Timestamp).toDate();
-                    final endTime = (session['endTime'] as Timestamp).toDate();
-                    final sessionCode = session['sessionCode'];
-                    
-                    final isActive = endTime.isAfter(DateTime.now());
+          body: ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: sessions.length,
+            itemBuilder: (context, index) {
+              final session = sessions[index].data() as Map<String, dynamic>;
+              final startTime = (session['startTime'] as Timestamp).toDate();
+              final endTime = (session['endTime'] as Timestamp).toDate();
+              final sessionCode = session['sessionCode'];
+              
+              final isActive = endTime.isAfter(DateTime.now());
 
-                    return Card(
-                      color: isActive ? primaryColor.withOpacity(0.1) : null,
-                      child: ListTile(
-                        title: Text('Session: ${startTime.day}/${startTime.month}/${startTime.year}'),
-                        subtitle: Text(isActive
-                            ? 'ACTIVE - Code: $sessionCode (Ends: ${endTime.hour}:${endTime.minute.toString().padLeft(2, '0')})'
-                            : 'Ended: ${startTime.hour}:${startTime.minute.toString().padLeft(2, '0')}'),
-                        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                        onTap: () {
-                          // Navigate to a details page (optional: to view who marked present)
-                        },
-                      ),
-                    );
+              return Card(
+                color: isActive ? primaryColor.withOpacity(0.1) : null,
+                child: ListTile(
+                  title: Text('Session: ${startTime.day}/${startTime.month}/${startTime.year}'),
+                  subtitle: Text(isActive
+                      ? 'ACTIVE - Code: $sessionCode (Ends: ${endTime.hour}:${endTime.minute.toString().padLeft(2, '0')})'
+                      : 'Ended: ${startTime.hour}:${startTime.minute.toString().padLeft(2, '0')}'),
+                  trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                  onTap: () {
+                    // TODO: Navigate to a details page
                   },
-                ),
-          
-          // Instructor FAB to start a new session
-          // --- FIX: This now uses the local 'hasActiveSession' variable ---
-          floatingActionButton: FloatingActionButton.extended(
-            onPressed: hasActiveSession ? null : () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) => StartAttendanceSessionPage(classId: widget.classId),
                 ),
               );
             },
-            label: Text(hasActiveSession ? 'Active Session Running' : 'Start New QR Session'),
-            icon: Icon(hasActiveSession ? Icons.timer : Icons.qr_code_2),
-            backgroundColor: hasActiveSession ? Colors.grey : primaryColor,
-            foregroundColor: Colors.white,
+          ),
+          // FAB is outside the ListView, correctly placed in the Scaffold
+          floatingActionButton: _buildFab(context, classId, hasActiveSession, primaryColor),
+        );
+      },
+    );
+  }
+  
+  // Helper method for the Floating Action Button
+  Widget _buildFab(BuildContext context, String classId, bool hasActiveSession, Color primaryColor) {
+    return FloatingActionButton.extended(
+      onPressed: hasActiveSession ? null : () {
+        // NOTE: Ensure you have 'StartAttendanceSessionPage' imported
+        // and defined in your project to avoid errors.
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => StartAttendanceSessionPage(classId: classId),
           ),
         );
       },
+      label: Text(hasActiveSession ? 'Active Session Running' : 'Start New Session'),
+      icon: Icon(hasActiveSession ? Icons.timer : Icons.add_alarm),
+      backgroundColor: hasActiveSession ? Colors.grey : primaryColor,
+      foregroundColor: Colors.white,
     );
   }
 }
