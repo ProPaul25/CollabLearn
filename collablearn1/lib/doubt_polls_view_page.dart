@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'create_doubt_poll_page.dart'; 
+import 'package:collablearn1/doubt_poll_detail_page.dart'; 
 
 // --- 1. DATA MODEL UPDATED ---
 class DoubtPoll {
@@ -171,6 +172,8 @@ class DoubtPollsViewPage extends StatelessWidget {
     final bool isUpvoted = poll.upvotedBy.contains(currentUserId);
     // Check if the current user is the author
     final bool isAuthor = poll.postedById == currentUserId;
+    // Check if the user is the original poster (used for navigation)
+    final bool isOriginalPoster = poll.postedById == currentUserId;
     
     final primaryColor = Theme.of(context).colorScheme.primary;
 
@@ -180,7 +183,26 @@ class DoubtPollsViewPage extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
       child: InkWell(
         onTap: () {
-          // TODO: Navigate to the Doubt Poll Detail Page
+          // --- NAVIGATION IMPLEMENTATION ---
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => DoubtPollDetailPage(
+                pollId: poll.id,
+                classId: classId,
+                // Pass the necessary data as a Map<String, dynamic>
+                initialPollData: {
+                  'question': poll.question,
+                  'postedBy': poll.postedBy,
+                  'postedById': poll.postedById,
+                  'postedOn': poll.postedOn,
+                  'answersCount': poll.answersCount,
+                  // Note: Add any other fields the Detail Page uses from initialPollData
+                },
+                isOriginalPoster: isOriginalPoster,
+              ),
+            ),
+          );
+          // --- END NAVIGATION IMPLEMENTATION ---
         },
         borderRadius: BorderRadius.circular(15),
         child: Padding(
