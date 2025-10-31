@@ -3,29 +3,29 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'create_doubt_poll_page.dart'; 
-import 'package:collablearn1/doubt_poll_detail_page.dart'; 
+import 'create_doubt_poll_page.dart';
+import 'package:collablearn1/doubt_poll_detail_page.dart';
 
 // --- 1. DATA MODEL UPDATED ---
 class DoubtPoll {
   final String id;
   final String question;
   final String postedBy;
-  final String postedById; // <-- ADDED
+  final String postedById;
   final Timestamp postedOn;
   final int answersCount;
   final int upvotes;
-  final List<dynamic> upvotedBy; // <-- ADDED
+  final List<dynamic> upvotedBy;
 
   DoubtPoll({
     required this.id,
     required this.question,
     required this.postedBy,
-    required this.postedById, // <-- ADDED
+    required this.postedById,
     required this.postedOn,
     required this.answersCount,
     required this.upvotes,
-    required this.upvotedBy, // <-- ADDED
+    required this.upvotedBy,
   });
 
   factory DoubtPoll.fromFirestore(DocumentSnapshot doc) {
@@ -35,11 +35,11 @@ class DoubtPoll {
       id: doc.id,
       question: data['question'] ?? 'No Question Title',
       postedBy: data['postedBy'] ?? 'Unknown User',
-      postedById: data['postedById'] ?? '', // <-- ADDED
+      postedById: data['postedById'] ?? '',
       postedOn: data['postedOn'] ?? Timestamp.now(),
       answersCount: data['answersCount'] ?? 0,
       upvotes: data['upvotes'] ?? 0,
-      upvotedBy: data['upvotedBy'] ?? [], // <-- ADDED
+      upvotedBy: data['upvotedBy'] ?? [],
     );
   }
 }
@@ -57,8 +57,7 @@ class DoubtPollsViewPage extends StatelessWidget {
     return FirebaseFirestore.instance
         .collection('doubt_polls')
         .where('courseId', isEqualTo: courseId)
-        // Sort by upvotes (most first), then by date (newest first)
-        .orderBy('upvotes', descending: true) 
+        .orderBy('upvotes', descending: true)
         .orderBy('postedOn', descending: true)
         .snapshots()
         .map((snapshot) {
@@ -68,9 +67,8 @@ class DoubtPollsViewPage extends StatelessWidget {
     });
   }
 
-  // --- 3. NEW UPVOTE LOGIC ---
+  // --- 3. UPVOTE LOGIC ---
   Future<void> _toggleUpvote(BuildContext context, DoubtPoll poll, String currentUserId) async {
-    // Requirement 1: Prevent self-upvoting
     if (poll.postedById == currentUserId) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('You cannot upvote your own post.'), backgroundColor: Colors.orange),
@@ -79,17 +77,13 @@ class DoubtPollsViewPage extends StatelessWidget {
     }
 
     final docRef = FirebaseFirestore.instance.collection('doubt_polls').doc(poll.id);
-    
-    // Requirement 4: Toggle upvote
+
     if (poll.upvotedBy.contains(currentUserId)) {
-      // User has upvoted, so REMOVE the upvote
       await docRef.update({
         'upvotes': FieldValue.increment(-1),
         'upvotedBy': FieldValue.arrayRemove([currentUserId])
       });
     } else {
-      // User has not upvoted, so ADD the upvote
-      // Requirement 2 (once only) is handled by arrayUnion
       await docRef.update({
         'upvotes': FieldValue.increment(1),
         'upvotedBy': FieldValue.arrayUnion([currentUserId])
@@ -100,11 +94,9 @@ class DoubtPollsViewPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // We need the user's ID to check for self-voting and toggle
     final String currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
 
     return Scaffold(
-      // The content of the Discussion tab
       body: StreamBuilder<List<DoubtPoll>>(
         stream: getDoubtPollsStream(classId),
         builder: (context, snapshot) {
@@ -135,14 +127,12 @@ class DoubtPollsViewPage extends StatelessWidget {
             itemCount: polls.length,
             itemBuilder: (context, index) {
               final poll = polls[index];
-              // --- 4. PASS DATA TO CARD ---
               return _buildDoubtPollCard(context, poll, currentUserId);
             },
           );
         },
       ),
       
-      // Floating Action Button
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
           Navigator.of(context).push(
@@ -153,27 +143,23 @@ class DoubtPollsViewPage extends StatelessWidget {
         },
         label: const Text('Ask a Doubt'),
         icon: const Icon(Icons.add_comment),
-        backgroundColor: Theme.of(context).colorScheme.primary, // Changed color
+        backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Colors.white,
       ),
     );
   }
   
-  // --- 5. CARD UI UPDATED ---
+  // --- 5. CARD UI UPDATED (NAVIGATION) ---
   Widget _buildDoubtPollCard(BuildContext context, DoubtPoll poll, String currentUserId) {
     String timeAgo(Timestamp timestamp) {
       final duration = DateTime.now().difference(timestamp.toDate());
       if (duration.inMinutes < 60) return '${duration.inMinutes}m ago';
       if (duration.inHours < 24) return '${duration.inHours}h ago';
-      return '${timestamp.toDate().day}/${timestamp.toDate().month}'; 
+      return '${timestamp.toDate().day}/${timestamp.toDate().month}';
     }
 
-    // Check if the current user has upvoted this poll
     final bool isUpvoted = poll.upvotedBy.contains(currentUserId);
-    // Check if the current user is the author
     final bool isAuthor = poll.postedById == currentUserId;
-    // Check if the user is the original poster (used for navigation)
-    final bool isOriginalPoster = poll.postedById == currentUserId;
     
     final primaryColor = Theme.of(context).colorScheme.primary;
 
@@ -183,26 +169,24 @@ class DoubtPollsViewPage extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
       child: InkWell(
         onTap: () {
-          // --- NAVIGATION IMPLEMENTATION ---
+          // --- NAVIGATION SIMPLIFIED ---
           Navigator.of(context).push(
             MaterialPageRoute(
               builder: (context) => DoubtPollDetailPage(
                 pollId: poll.id,
                 classId: classId,
-                // Pass the necessary data as a Map<String, dynamic>
+                // Pass the initial data to avoid a loading flash
                 initialPollData: {
                   'question': poll.question,
                   'postedBy': poll.postedBy,
                   'postedById': poll.postedById,
                   'postedOn': poll.postedOn,
                   'answersCount': poll.answersCount,
-                  // Note: Add any other fields the Detail Page uses from initialPollData
                 },
-                isOriginalPoster: isOriginalPoster,
               ),
             ),
           );
-          // --- END NAVIGATION IMPLEMENTATION ---
+          // --- END NAVIGATION ---
         },
         borderRadius: BorderRadius.circular(15),
         child: Padding(

@@ -1,4 +1,4 @@
-// lib/create_doubt_poll_page.dart
+// lib/create_doubt_poll_page.dart - CORRECTED
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -27,12 +27,10 @@ class _CreateDoubtPollPageState extends State<CreateDoubtPollPage> {
     super.dispose();
   }
 
-  // Fetches the current user's name from the 'users' collection
   Future<String> _getCurrentUserName() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-      // FIX: Read 'firstName' and 'lastName' instead of 'name'
       final data = userDoc.data();
       final String firstName = data?['firstName'] ?? '';
       final String lastName = data?['lastName'] ?? '';
@@ -58,13 +56,14 @@ class _CreateDoubtPollPageState extends State<CreateDoubtPollPage> {
         'postedBy': userName,
         'postedById': user!.uid,
         'postedOn': Timestamp.now(),
-        'answersCount': 0, // Initialize count for sorting/display
-        'upvotes': 0, // Initialize upvotes for the question itself
-        'upvotedBy': [] // <-- THIS IS THE CORRECTED LINE
+        'answersCount': 0,
+        'upvotes': 0,
+        'upvotedBy': [],
+        'finalAnswerIds': [] // <-- ADD THIS LINE
       });
 
       if (mounted) {
-        Navigator.pop(context); // Close the page on success
+        Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Doubt Poll posted successfully!')),
         );
@@ -101,7 +100,6 @@ class _CreateDoubtPollPageState extends State<CreateDoubtPollPage> {
               ),
               const SizedBox(height: 20),
               
-              // Question Field
               TextFormField(
                 controller: _questionController,
                 maxLines: 8,
