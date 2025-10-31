@@ -42,6 +42,7 @@ flutter:
     - assets/background.jpg
     - assets/icons/icon.png  # <-- Make sure your icon is here
 
+
 # This is the new, single, correct configuration block
 flutter_launcher_icons:
   android: true
@@ -49,6 +50,10 @@ flutter_launcher_icons:
   image_path: "assets/icons/icon.png"
   min_sdk_android: 21
   remove_alpha_ios: true
+
+  # ADD THIS LINE for adaptive icon background
+  adaptive_icon_background: "#333333" # Dark Gray matching your icon's background
+  adaptive_icon_foreground: "assets/icons/icon.png" # Your existing icon as the foreground
 
   # This sets the app name
   flutter_launcher_name:
