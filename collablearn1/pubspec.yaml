@@ -5,7 +5,7 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.9.2 <4.0.0' # Updated SDK version range for better future-proofing
+  sdk: '>=3.9.2 <4.0.0'
 
 dependencies:
   flutter:
@@ -25,25 +25,13 @@ dependencies:
   url_launcher: ^6.3.0
   intl: ^0.20.2
   cloudinary_public: ^0.23.1
-  
-flutter_icons:
-  android: true
-  ios: true
-  image_path: "assets/icons/icon.png"
-  adaptive_icon_background: "#2E2E2E"   # choose your background color
-  adaptive_icon_foreground: "assets/icons/icon.png"
-
-flutter_launcher_name:
-  name: "CollabLearn"
-
-
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  rename_app: ^1.6.1
+  
+  # This is the only package you need for icons and the name
   flutter_launcher_icons: ^0.13.1
-
 
 flutter:
   uses-material-design: true
@@ -52,3 +40,16 @@ flutter:
     - assets/google.png
     - assets/logo.png
     - assets/background.jpg
+    - assets/icons/icon.png  # <-- Make sure your icon is here
+
+# This is the new, single, correct configuration block
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icons/icon.png"
+  min_sdk_android: 21
+  remove_alpha_ios: true
+
+  # This sets the app name
+  flutter_launcher_name:
+    name: "CollabLearn"

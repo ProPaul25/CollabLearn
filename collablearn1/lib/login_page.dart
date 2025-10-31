@@ -104,7 +104,6 @@ class _LoginPageState extends State<LoginPage> {
   Future<void> _resetPassword() async {
     final email = _emailController.text.trim();
 
-    // NOTE: For security, Firebase only sends a reset email if the input is a valid email format.
     if (email.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -117,7 +116,6 @@ class _LoginPageState extends State<LoginPage> {
     setState(() => _isLoading = true); 
 
     try {
-      // If the user entered an Entry No/ID, we need to look up the corresponding email
       String emailToReset;
       if (!email.contains('@')) {
         final lookupDoc = await FirebaseFirestore.instance
@@ -168,13 +166,12 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  // --- RESTORED: GOOGLE SIGN IN FUNCTION ---
+  // --- Google Sign In Function ---
   Future<void> _signInWithGoogle() async {
     setState(() => _isLoading = true);
     try {
       final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
       if (googleUser == null) {
-        // The user canceled the sign-in
         setState(() => _isLoading = false);
         return;
       }
@@ -185,7 +182,6 @@ class _LoginPageState extends State<LoginPage> {
         idToken: googleAuth.idToken,
       );
       
-      // Sign in to Firebase
       final userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
       final user = userCredential.user;
 
@@ -193,30 +189,25 @@ class _LoginPageState extends State<LoginPage> {
         throw Exception("Google Sign-in failed to return a user.");
       }
 
-      // --- NEW: Check if user exists in Firestore, if not, create them ---
       final userDocRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
       final userDoc = await userDocRef.get();
 
       if (!userDoc.exists) {
-        // User is new, create a document for them
         String firstName = googleUser.displayName?.split(' ').first ?? '';
         String lastName = googleUser.displayName?.split(' ').last ?? '';
-        if (firstName == lastName) lastName = ''; // Handle single-name accounts
+        if (firstName == lastName) lastName = ''; 
         
         await userDocRef.set({
           'firstName': firstName,
           'lastName': lastName,
-          'role': 'student', // Default new Google sign-ins to student
+          'role': 'student', 
           'email': user.email,
           'createdAt': FieldValue.serverTimestamp(),
           'enrolledClasses': [],
           'profileImageBase64': null,
-          'entryNo': '', // Google sign-in users won't have an entry number
+          'entryNo': '',
           'instructorId': '',
         });
-        
-        // Note: We don't create a 'user_lookups' doc for Google sign-in
-        // as they will always log in with their email.
       }
       
     } on FirebaseAuthException catch (e) {
@@ -282,7 +273,7 @@ class _LoginPageState extends State<LoginPage> {
                           const SizedBox(height: 30),
                           _buildTextField(
                             controller: _emailController,
-                            hintText: 'Email ID or Entry No', // Updated hint text
+                            hintText: 'Email ID', // <-- THIS IS THE FIX
                             prefixIcon: Icons.person_outline,
                             keyboardType: TextInputType.emailAddress,
                           ),
@@ -344,7 +335,6 @@ class _LoginPageState extends State<LoginPage> {
                           Text('or sign in with', style: TextStyle(color: Theme.of(context).textTheme.bodyMedium!.color)),
                           const SizedBox(height: 20),
                           
-                          // --- RESTORED: GOOGLE SIGN IN BUTTON ---
                           SizedBox(
                             width: double.infinity,
                             child: ElevatedButton(
@@ -367,7 +357,6 @@ class _LoginPageState extends State<LoginPage> {
                                     ),
                             ),
                           ),
-                          // --- END OF RESTORED BUTTON ---
                           
                         ],
                       ),
@@ -424,7 +413,7 @@ class _LoginPageState extends State<LoginPage> {
         controller: controller,
         keyboardType: keyboardType,
         decoration: InputDecoration(
-          hintText: hintText,
+          hintText: hintText, // <-- USES THE ORIGINAL HINT TEXT
           contentPadding: const EdgeInsets.symmetric(vertical: 18),
           prefixIcon: Icon(prefixIcon, color: primaryColor),
           border: InputBorder.none,
