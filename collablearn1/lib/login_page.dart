@@ -34,7 +34,7 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
-  // --- FINAL, CORRECT LOGIN FUNCTION (Restored from Original) ---
+  // --- Email/Password Login Function ---
   Future<void> _login() async {
     final loginIdentifier = _emailController.text.trim();
     final password = _passwordController.text.trim();
@@ -100,15 +100,15 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  // --- NEW FORGOT PASSWORD FUNCTION ---
+  // --- Forgot Password Function ---
   Future<void> _resetPassword() async {
     final email = _emailController.text.trim();
 
     // NOTE: For security, Firebase only sends a reset email if the input is a valid email format.
-    if (!email.contains('@') || email.isEmpty) {
+    if (email.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please enter your Email ID in the field above.'), backgroundColor: Colors.orange),
+          const SnackBar(content: Text('Please enter your Email or Entry No in the field above.'), backgroundColor: Colors.orange),
         );
       }
       return;
@@ -118,7 +118,7 @@ class _LoginPageState extends State<LoginPage> {
 
     try {
       // If the user entered an Entry No/ID, we need to look up the corresponding email
-      String emailToReset = email;
+      String emailToReset;
       if (!email.contains('@')) {
         final lookupDoc = await FirebaseFirestore.instance
             .collection('user_lookups')
@@ -129,6 +129,8 @@ class _LoginPageState extends State<LoginPage> {
         } else {
           throw FirebaseAuthException(code: 'user-not-found');
         }
+      } else {
+        emailToReset = email;
       }
 
       await FirebaseAuth.instance.sendPasswordResetEmail(email: emailToReset);
@@ -166,21 +168,64 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  // --- EXISTING GOOGLE SIGN IN FUNCTION (from Original) ---
+  // --- RESTORED: GOOGLE SIGN IN FUNCTION ---
   Future<void> _signInWithGoogle() async {
     setState(() => _isLoading = true);
     try {
       final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
       if (googleUser == null) {
+        // The user canceled the sign-in
         setState(() => _isLoading = false);
         return;
       }
+      
       final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
-      final OAuthCredential credential = GoogleAuthProvider.credential(accessToken: googleAuth.accessToken, idToken: googleAuth.idToken);
-      await FirebaseAuth.instance.signInWithCredential(credential);
+      final OAuthCredential credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+      
+      // Sign in to Firebase
+      final userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
+      final user = userCredential.user;
+
+      if (user == null) {
+        throw Exception("Google Sign-in failed to return a user.");
+      }
+
+      // --- NEW: Check if user exists in Firestore, if not, create them ---
+      final userDocRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
+      final userDoc = await userDocRef.get();
+
+      if (!userDoc.exists) {
+        // User is new, create a document for them
+        String firstName = googleUser.displayName?.split(' ').first ?? '';
+        String lastName = googleUser.displayName?.split(' ').last ?? '';
+        if (firstName == lastName) lastName = ''; // Handle single-name accounts
+        
+        await userDocRef.set({
+          'firstName': firstName,
+          'lastName': lastName,
+          'role': 'student', // Default new Google sign-ins to student
+          'email': user.email,
+          'createdAt': FieldValue.serverTimestamp(),
+          'enrolledClasses': [],
+          'profileImageBase64': null,
+          'entryNo': '', // Google sign-in users won't have an entry number
+          'instructorId': '',
+        });
+        
+        // Note: We don't create a 'user_lookups' doc for Google sign-in
+        // as they will always log in with their email.
+      }
+      
     } on FirebaseAuthException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error with Google Sign-in: ${e.message}'), backgroundColor: Colors.red));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('An error occurred: ${e.toString()}'), backgroundColor: Colors.red));
       }
     } finally {
       if (mounted) {
@@ -237,14 +282,13 @@ class _LoginPageState extends State<LoginPage> {
                           const SizedBox(height: 30),
                           _buildTextField(
                             controller: _emailController,
-                            hintText: 'Email ID', // Updated hint text
+                            hintText: 'Email ID or Entry No', // Updated hint text
                             prefixIcon: Icons.person_outline,
                             keyboardType: TextInputType.emailAddress,
                           ),
                           const SizedBox(height: 20),
                           _buildPasswordField(context),
                           
-                          // --- FORGOT PASSWORD BUTTON ---
                           Padding(
                             padding: const EdgeInsets.only(top: 8.0),
                             child: Align(
@@ -256,7 +300,6 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                           ),
                           const SizedBox(height: 30),
-                          // --- END FORGOT PASSWORD BUTTON ---
 
                           SizedBox(
                             width: double.infinity,
@@ -300,15 +343,17 @@ class _LoginPageState extends State<LoginPage> {
                           const SizedBox(height: 20),
                           Text('or sign in with', style: TextStyle(color: Theme.of(context).textTheme.bodyMedium!.color)),
                           const SizedBox(height: 20),
+                          
+                          // --- RESTORED: GOOGLE SIGN IN BUTTON ---
                           SizedBox(
                             width: double.infinity,
                             child: ElevatedButton(
                               onPressed: _isLoading ? null : _signInWithGoogle,
                               style: ElevatedButton.styleFrom(
-                                foregroundColor: Colors.black,
-                                backgroundColor: Colors.white,
+                                foregroundColor: isDark ? Colors.white : Colors.black,
+                                backgroundColor: isDark ? const Color(0xFF2A314D) : Colors.white,
                                 padding: const EdgeInsets.symmetric(vertical: 18),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15), side: const BorderSide(color: Colors.grey)),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15), side: BorderSide(color: Colors.grey.shade300)),
                               ),
                               child: _isLoading
                                   ? const Center(child: SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2)))
@@ -322,6 +367,8 @@ class _LoginPageState extends State<LoginPage> {
                                     ),
                             ),
                           ),
+                          // --- END OF RESTORED BUTTON ---
+                          
                         ],
                       ),
                     ),
