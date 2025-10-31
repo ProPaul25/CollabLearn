@@ -1,4 +1,4 @@
-// lib/create_announcement_page.dart
+// lib/create_announcement_page.dart - CORRECTED
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -29,18 +29,14 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
     super.dispose();
   }
 
-  // Function to get the current user's name
-  // Function to get the current user's name
   Future<String> _getCurrentUserName() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-      // FIX: Read 'firstName' and 'lastName' instead of 'name'
       final data = userDoc.data();
       final String firstName = data?['firstName'] ?? '';
       final String lastName = data?['lastName'] ?? '';
       final String name = "$firstName $lastName".trim();
-
       return name.isEmpty ? (user.email ?? 'Instructor') : name;
     }
     return 'Instructor';
@@ -53,18 +49,41 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
 
     try {
       final userName = await _getCurrentUserName();
+      final user = FirebaseAuth.instance.currentUser!;
+      final postTime = Timestamp.now();
       
-      await FirebaseFirestore.instance.collection('announcements').add({
+      // --- FIX: Use a batch write ---
+      final batch = FirebaseFirestore.instance.batch();
+
+      // 1. Create the original announcement
+      final announcementRef = FirebaseFirestore.instance.collection('announcements').doc();
+      batch.set(announcementRef, {
         'title': _titleController.text.trim(),
         'content': _contentController.text.trim(),
         'courseId': widget.classId,
         'postedBy': userName,
-        'postedOn': Timestamp.now(),
-        'postedById': FirebaseAuth.instance.currentUser!.uid,
+        'postedOn': postTime,
+        'postedById': user.uid,
       });
 
+      // 2. Create the unified class_feed item
+      final feedRef = FirebaseFirestore.instance.collection('class_feed').doc();
+      batch.set(feedRef, {
+        'type': 'announcement', // To identify this item in the feed
+        'title': _titleController.text.trim(),
+        'content': _contentController.text.trim(),
+        'courseId': widget.classId,
+        'postedBy': userName,
+        'postedById': user.uid,
+        'lastActivityTimestamp': postTime, // Used for sorting
+        'pollId': null, // Not a poll
+      });
+      
+      await batch.commit();
+      // --- END OF FIX ---
+
       if (mounted) {
-        Navigator.pop(context); // Close the page on success
+        Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Announcement posted successfully!')),
         );
@@ -82,6 +101,7 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
 
   @override
   Widget build(BuildContext context) {
+    // ... (UI is unchanged)
     return Scaffold(
       appBar: AppBar(
         title: const Text('Create New Announcement'),
@@ -95,7 +115,6 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              // Title Field
               TextFormField(
                 controller: _titleController,
                 decoration: const InputDecoration(
@@ -106,8 +125,6 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
                 validator: (value) => value!.isEmpty ? 'Title is required' : null,
               ),
               const SizedBox(height: 20),
-              
-              // Content Field
               TextFormField(
                 controller: _contentController,
                 maxLines: 10,
@@ -120,7 +137,6 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
                 validator: (value) => value!.isEmpty ? 'Content is required' : null,
               ),
               const SizedBox(height: 30),
-
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(

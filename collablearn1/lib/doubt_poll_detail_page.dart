@@ -1,25 +1,22 @@
-// lib/doubt_poll_detail_page.dart - FULLY UPDATED FOR NEW REQUIREMENTS
+// lib/doubt_poll_detail_page.dart - CORRECTED
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-// --- Data Model for processing replies in memory ---
+// ... (ReplyData class is unchanged)
 class ReplyData {
   final String id;
   final Map<String, dynamic> data;
   final List<ReplyData> children = [];
   String get parentId => data['parentId'] as String? ?? '';
-
   ReplyData(this.id, this.data);
 }
-
 
 class DoubtPollDetailPage extends StatefulWidget {
   final String pollId;
   final String classId;
   final Map<String, dynamic> initialPollData;
-  // REMOVED: isOriginalPoster
 
   const DoubtPollDetailPage({
     super.key,
@@ -36,12 +33,10 @@ class _DoubtPollDetailPageState extends State<DoubtPollDetailPage> {
   final _replyController = TextEditingController();
   final _currentUser = FirebaseAuth.instance.currentUser;
   
-  // --- NEW STATE VARIABLES ---
   late String _currentUserName = 'Anonymous';
   String _instructorId = '';
   bool _isTeacher = false;
   bool _isOriginalPoster = false;
-
   String? _replyingToId;
   String? _replyingToName;
 
@@ -49,26 +44,20 @@ class _DoubtPollDetailPageState extends State<DoubtPollDetailPage> {
   void initState() {
     super.initState();
     _loadCurrentUserData();
-    
-    // Check if current user is the original poster from initial data
     if (_currentUser != null) {
       _isOriginalPoster = widget.initialPollData['postedById'] == _currentUser!.uid;
     }
   }
 
-  // --- UPDATED: Now fetches teacher status ---
   Future<void> _loadCurrentUserData() async {
+    // ... (This function is unchanged)
     if (_currentUser == null) return;
     try {
-      // Fetch user's name
       final userDoc = await FirebaseFirestore.instance.collection('users').doc(_currentUser!.uid).get();
-      
-      // Fetch class instructor ID
       final classDoc = await FirebaseFirestore.instance.collection('classes').doc(widget.classId).get();
       
       if (mounted) {
         setState(() {
-          // Set user name
           if (userDoc.exists) {
             final data = userDoc.data();
             final String firstName = data?['firstName'] ?? '';
@@ -76,8 +65,6 @@ class _DoubtPollDetailPageState extends State<DoubtPollDetailPage> {
             _currentUserName = "$firstName $lastName".trim();
             _currentUserName = _currentUserName.isEmpty ? 'Anonymous' : _currentUserName;
           }
-          
-          // Set instructor/teacher status
           if (classDoc.exists) {
             _instructorId = classDoc.data()?['instructorId'] ?? '';
             _isTeacher = _currentUser!.uid == _instructorId;
@@ -89,28 +76,20 @@ class _DoubtPollDetailPageState extends State<DoubtPollDetailPage> {
     }
   }
 
-  // --- NEW: Toggles final answer (multi-select) ---
   Future<void> _toggleFinalAnswer(String replyId, bool isCurrentlyFinal) async {
-    if (!_isTeacher) return; // Only teacher can mark
-
+    // ... (This function is unchanged)
+    if (!_isTeacher) return;
     try {
       final pollRef = FirebaseFirestore.instance.collection('doubt_polls').doc(widget.pollId);
-
       if (isCurrentlyFinal) {
-        // Remove from array
-        await pollRef.update({
-          'finalAnswerIds': FieldValue.arrayRemove([replyId]),
-        });
+        await pollRef.update({'finalAnswerIds': FieldValue.arrayRemove([replyId])});
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Answer unmarked as final.'), backgroundColor: Colors.orange),
           );
         }
       } else {
-        // Add to array
-        await pollRef.update({
-          'finalAnswerIds': FieldValue.arrayUnion([replyId]),
-        });
+        await pollRef.update({'finalAnswerIds': FieldValue.arrayUnion([replyId])});
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Final answer marked!'), backgroundColor: Colors.green),
@@ -127,11 +106,12 @@ class _DoubtPollDetailPageState extends State<DoubtPollDetailPage> {
     }
   }
 
-  // POST REPLY (Unchanged, but parentId logic is now used)
+  // --- FIX: This function now "bumps" the post in the class_feed ---
   Future<void> _postReply({String? parentId}) async {
     if (_replyController.text.trim().isEmpty || _currentUser == null) return;
 
     final replyText = _replyController.text.trim();
+    final newTimestamp = FieldValue.serverTimestamp(); // Use the same timestamp for all updates
     _replyController.clear();
     setState(() {
       _replyingToId = null;
@@ -140,39 +120,60 @@ class _DoubtPollDetailPageState extends State<DoubtPollDetailPage> {
 
     try {
       final batch = FirebaseFirestore.instance.batch();
+      
+      // 1. Add the new reply to the subcollection
       final pollRef = FirebaseFirestore.instance.collection('doubt_polls').doc(widget.pollId);
       final repliesRef = pollRef.collection('replies').doc();
-
       batch.set(repliesRef, {
         'pollId': widget.pollId,
         'text': replyText,
         'postedById': _currentUser!.uid,
         'postedBy': _currentUserName,
-        'timestamp': FieldValue.serverTimestamp(),
+        'timestamp': newTimestamp,
         'upvotes': [], 
         'parentId': parentId,
       });
 
+      // 2. Increment the answersCount on the main poll document
       batch.update(pollRef, {
         'answersCount': FieldValue.increment(1),
       });
 
+      // 3. Find the matching feed item and UPDATE its timestamp to "bump" it
+      final feedQuery = await FirebaseFirestore.instance
+          .collection('class_feed')
+          .where('pollId', isEqualTo: widget.pollId)
+          .limit(1)
+          .get();
+          
+      if (feedQuery.docs.isNotEmpty) {
+        final feedDocRef = feedQuery.docs.first.reference;
+        batch.update(feedDocRef, {
+          'lastActivityTimestamp': newTimestamp,
+          'answersCount': FieldValue.increment(1), // Also update count on feed item
+        });
+      }
+
+      // 4. Commit all 3 operations
       await batch.commit();
       if (mounted) FocusScope.of(context).unfocus();
     } catch (e) {
       debugPrint('Error posting reply: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error posting reply: ${e.toString()}'), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 
-  // Helper function to process flat list of documents into a nested structure
+  // ... (_processReplies and _buildNestedReplies functions are unchanged)
   List<ReplyData> _processReplies(List<DocumentSnapshot> docs) {
     final Map<String, ReplyData> allReplies = {};
     for (var doc in docs) {
       allReplies[doc.id] = ReplyData(doc.id, doc.data() as Map<String, dynamic>);
     }
-
     final List<ReplyData> rootReplies = [];
-
     allReplies.forEach((id, reply) {
       if (reply.parentId.isEmpty) {
         rootReplies.add(reply);
@@ -181,35 +182,24 @@ class _DoubtPollDetailPageState extends State<DoubtPollDetailPage> {
         parent?.children.add(reply);
       }
     });
-
     return rootReplies;
   }
   
-  // --- UPDATED: Now sorts replies and passes teacher/final status ---
   List<Widget> _buildNestedReplies(List<ReplyData> replies, List<String> finalAnswerIds, {double depth = 0}) {
     List<Widget> list = [];
-
-    // --- NEW SORTING LOGIC ---
     replies.sort((a, b) {
-      // 1. Check Teacher status
       bool aIsTeacher = a.data['postedById'] == _instructorId;
       bool bIsTeacher = b.data['postedById'] == _instructorId;
       if (aIsTeacher && !bIsTeacher) return -1;
       if (bIsTeacher && !aIsTeacher) return 1;
-
-      // 2. Check Final Answer status
       bool aIsFinal = finalAnswerIds.contains(a.id);
       bool bIsFinal = finalAnswerIds.contains(b.id);
       if (aIsFinal && !bIsFinal) return -1;
       if (bIsFinal && !aIsFinal) return 1;
-
-      // 3. Fallback to timestamp
       final aTimestamp = a.data['timestamp'] as Timestamp? ?? Timestamp.now();
       final bTimestamp = b.data['timestamp'] as Timestamp? ?? Timestamp.now();
-      return aTimestamp.compareTo(bTimestamp); // Oldest first
+      return aTimestamp.compareTo(bTimestamp);
     });
-    // --- END SORTING LOGIC ---
-
     for (var reply in replies) {
       list.add(Padding(
         padding: EdgeInsets.only(left: depth > 0 ? 20.0 : 0.0),
@@ -219,9 +209,9 @@ class _DoubtPollDetailPageState extends State<DoubtPollDetailPage> {
               replyDocId: reply.id,
               pollId: widget.pollId,
               reply: reply.data,
-              finalAnswerIds: finalAnswerIds, // Pass list
-              isTeacher: _isTeacher, // Pass teacher status
-              onToggleFinal: _toggleFinalAnswer, // Pass toggle function
+              finalAnswerIds: finalAnswerIds,
+              isTeacher: _isTeacher,
+              onToggleFinal: _toggleFinalAnswer,
               onReply: (replyId, postedBy) {
                 setState(() {
                   _replyingToId = replyId;
@@ -229,7 +219,6 @@ class _DoubtPollDetailPageState extends State<DoubtPollDetailPage> {
                 });
               },
             ),
-            // Recursively build children (who will also be sorted)
             ..._buildNestedReplies(reply.children, finalAnswerIds, depth: depth + 1),
           ],
         ),
@@ -240,6 +229,7 @@ class _DoubtPollDetailPageState extends State<DoubtPollDetailPage> {
 
   @override
   Widget build(BuildContext context) {
+    // ... (UI build method is unchanged)
     return Scaffold(
       appBar: AppBar(
         title: const Text('Discussion Thread'),
@@ -248,7 +238,6 @@ class _DoubtPollDetailPageState extends State<DoubtPollDetailPage> {
       ),
       body: Column(
         children: [
-          // Main Question Area
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(
@@ -271,8 +260,6 @@ class _DoubtPollDetailPageState extends State<DoubtPollDetailPage> {
               ],
             ),
           ),
-          
-          // Replies StreamBuilder (Nested Forum)
           Expanded(
             child: StreamBuilder<DocumentSnapshot>(
               stream: FirebaseFirestore.instance.collection('doubt_polls').doc(widget.pollId).snapshots(),
@@ -281,7 +268,6 @@ class _DoubtPollDetailPageState extends State<DoubtPollDetailPage> {
                   return const Center(child: CircularProgressIndicator());
                 }
                 final pollData = pollSnapshot.data!.data() as Map<String, dynamic>;
-                // --- UPDATED: Fetch list of IDs ---
                 final finalAnswerIds = List<String>.from(pollData['finalAnswerIds'] ?? []);
 
                 return StreamBuilder<QuerySnapshot>(
@@ -298,17 +284,13 @@ class _DoubtPollDetailPageState extends State<DoubtPollDetailPage> {
                     if (snapshot.hasError) {
                       return Center(child: Text('Error: ${snapshot.error}'));
                     }
-
                     final replies = snapshot.data?.docs ?? [];
                     if (replies.isEmpty) {
                       return const Center(child: Text('Be the first to reply!'));
                     }
-                    
                     final rootReplies = _processReplies(replies);
-
                     return ListView(
                       children: [
-                        // --- UPDATED: Pass list of IDs ---
                         ..._buildNestedReplies(rootReplies, finalAnswerIds),
                         const SizedBox(height: 10),
                       ],
@@ -318,27 +300,21 @@ class _DoubtPollDetailPageState extends State<DoubtPollDetailPage> {
               },
             ),
           ),
-
-          // --- UPDATED: Reply Input Area ---
           _buildReplyInput(),
         ],
       ),
     );
   }
 
-  // --- UPDATED: Hides for OP unless replying to a comment ---
   Widget _buildReplyInput() {
+    // ... (This widget is unchanged)
     final primaryColor = Theme.of(context).colorScheme.primary;
-    
-    // --- NEW REQUIREMENT: Hide if OP is trying to make a top-level reply ---
     if (_isOriginalPoster && _replyingToId == null) {
-      return const SizedBox.shrink(); // Show nothing
+      return const SizedBox.shrink();
     }
-
     String hintText = _replyingToName != null 
         ? 'Replying to ${_replyingToName}...' 
         : 'Add a reply to the main post...';
-        
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
@@ -392,18 +368,18 @@ class _DoubtPollDetailPageState extends State<DoubtPollDetailPage> {
   }
 }
 
-
 // ===============================================
-// UPDATED Reply Card Widget
+// Reply Card Widget
 // ===============================================
 
 class ReplyCard extends StatefulWidget {
+  // ... (This class is unchanged)
   final String replyDocId;
   final String pollId;
   final Map<String, dynamic> reply;
-  final List<String> finalAnswerIds; // <-- CHANGED
-  final bool isTeacher; // <-- CHANGED
-  final Function(String, bool) onToggleFinal; // <-- CHANGED
+  final List<String> finalAnswerIds;
+  final bool isTeacher;
+  final Function(String, bool) onToggleFinal;
   final Function(String replyId, String postedBy) onReply;
 
   const ReplyCard({
@@ -411,9 +387,9 @@ class ReplyCard extends StatefulWidget {
     required this.replyDocId,
     required this.pollId,
     required this.reply,
-    required this.finalAnswerIds, // <-- CHANGED
-    required this.isTeacher, // <-- CHANGED
-    required this.onToggleFinal, // <-- CHANGED
+    required this.finalAnswerIds,
+    required this.isTeacher,
+    required this.onToggleFinal,
     required this.onReply,
   });
 
@@ -424,24 +400,21 @@ class ReplyCard extends StatefulWidget {
 class _ReplyCardState extends State<ReplyCard> {
   final _currentUser = FirebaseAuth.instance.currentUser!;
 
-  // UPVOTE LOGIC (Unchanged, but restriction is still here)
   Future<void> _toggleUpvote() async {
+    // ... (This function is unchanged)
     final replyRef = FirebaseFirestore.instance
         .collection('doubt_polls')
         .doc(widget.pollId)
         .collection('replies')
         .doc(widget.replyDocId);
-
     if (_currentUser.uid == widget.reply['postedById']) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('You cannot upvote your own comment.'), backgroundColor: Colors.orange),
       );
       return;
     }
-
     final upvotes = List<String>.from(widget.reply['upvotes'] ?? []);
     final isUpvoted = upvotes.contains(_currentUser.uid);
-
     try {
       if (isUpvoted) {
         await replyRef.update({'upvotes': FieldValue.arrayRemove([_currentUser.uid])});
@@ -455,11 +428,10 @@ class _ReplyCardState extends State<ReplyCard> {
 
   @override
   Widget build(BuildContext context) {
+    // ... (This build method is unchanged)
     final primaryColor = Theme.of(context).colorScheme.primary;
     final upvotes = List<String>.from(widget.reply['upvotes'] ?? []);
     final isUpvoted = upvotes.contains(_currentUser.uid);
-    
-    // --- UPDATED LOGIC ---
     final isFinalAnswer = widget.finalAnswerIds.contains(widget.replyDocId);
     final isReplyAuthor = widget.reply['postedById'] == _currentUser.uid;
     final isTeacherReply = widget.reply['postedById'] == (context.findAncestorStateOfType<_DoubtPollDetailPageState>()?._instructorId ?? '');
@@ -488,7 +460,6 @@ class _ReplyCardState extends State<ReplyCard> {
                       color: isFinalAnswer ? Colors.green.shade700 : primaryColor,
                     ),
                   ),
-                  // --- NEW: Teacher Badge ---
                   if (isTeacherReply)
                     Padding(
                       padding: const EdgeInsets.only(left: 8.0),
@@ -500,7 +471,7 @@ class _ReplyCardState extends State<ReplyCard> {
                         side: BorderSide.none,
                       ),
                     ),
-                  if (isFinalAnswer && !isTeacherReply) // Don't show both
+                  if (isFinalAnswer && !isTeacherReply)
                     const Padding(
                       padding: EdgeInsets.only(left: 8.0),
                       child: Icon(Icons.check_circle, color: Colors.green, size: 18),
@@ -526,7 +497,6 @@ class _ReplyCardState extends State<ReplyCard> {
           const SizedBox(height: 8),
           Row(
             children: [
-              // Upvote Button
               GestureDetector(
                 onTap: _toggleUpvote,
                 child: Row(
@@ -546,19 +516,13 @@ class _ReplyCardState extends State<ReplyCard> {
                   ],
                 ),
               ),
-              
               const SizedBox(width: 16.0),
-
-              // Reply Button (For Nested Replies)
               TextButton.icon(
                 onPressed: () => widget.onReply(widget.replyDocId, widget.reply['postedBy'] as String? ?? 'Unknown'),
                 icon: const Icon(Icons.reply, size: 18),
                 label: const Text('Reply'),
               ),
-              
-              const Spacer(), // Pushes "Mark as Final" to the right
-
-              // --- UPDATED: Mark as Final Button (Teacher Only, Toggles) ---
+              const Spacer(),
               if (widget.isTeacher)
                 TextButton.icon(
                   onPressed: () => widget.onToggleFinal(widget.replyDocId, isFinalAnswer),

@@ -48,19 +48,42 @@ class _CreateDoubtPollPageState extends State<CreateDoubtPollPage> {
 
     try {
       final userName = await _getCurrentUserName();
-      final user = FirebaseAuth.instance.currentUser;
+      final user = FirebaseAuth.instance.currentUser!;
+      final postTime = Timestamp.now();
       
-      await FirebaseFirestore.instance.collection('doubt_polls').add({
+      // --- FIX: Use a batch write ---
+      final batch = FirebaseFirestore.instance.batch();
+
+      // 1. Create the original doubt poll
+      final pollRef = FirebaseFirestore.instance.collection('doubt_polls').doc();
+      batch.set(pollRef, {
         'question': _questionController.text.trim(),
         'courseId': widget.classId,
         'postedBy': userName,
-        'postedById': user!.uid,
-        'postedOn': Timestamp.now(),
+        'postedById': user.uid,
+        'postedOn': postTime,
         'answersCount': 0,
         'upvotes': 0,
         'upvotedBy': [],
-        'finalAnswerIds': [] // <-- ADD THIS LINE
+        'finalAnswerIds': []
       });
+      
+      // 2. Create the unified class_feed item
+      final feedRef = FirebaseFirestore.instance.collection('class_feed').doc();
+      batch.set(feedRef, {
+        'type': 'doubt', // To identify this item in the feed
+        'question': _questionController.text.trim(),
+        'courseId': widget.classId,
+        'postedBy': userName,
+        'postedById': user.uid,
+        'lastActivityTimestamp': postTime, // Used for sorting
+        'pollId': pollRef.id, // Link to the original poll
+        'answersCount': 0, // Store this here for the UI
+        'upvotes': 0, // Store this here for the UI
+      });
+      
+      await batch.commit();
+      // --- END OF FIX ---
 
       if (mounted) {
         Navigator.pop(context);
@@ -81,6 +104,7 @@ class _CreateDoubtPollPageState extends State<CreateDoubtPollPage> {
 
   @override
   Widget build(BuildContext context) {
+    // ... (UI is unchanged)
     return Scaffold(
       appBar: AppBar(
         title: const Text('Ask a New Doubt'),
@@ -99,7 +123,6 @@ class _CreateDoubtPollPageState extends State<CreateDoubtPollPage> {
                 style: TextStyle(fontSize: 16, color: Colors.grey),
               ),
               const SizedBox(height: 20),
-              
               TextFormField(
                 controller: _questionController,
                 maxLines: 8,
@@ -116,7 +139,6 @@ class _CreateDoubtPollPageState extends State<CreateDoubtPollPage> {
                 validator: (value) => value!.isEmpty ? 'A question is required to post a doubt.' : null,
               ),
               const SizedBox(height: 30),
-
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
