@@ -1,4 +1,4 @@
-// lib/course_dashboard_page.dart - FINAL VERSION
+// lib/course_dashboard_page.dart - FINAL VERSION WITH STUDY GROUPS
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart'; 
@@ -7,17 +7,16 @@ import 'study_materials_view_page.dart';
 import 'doubt_polls_view_page.dart';
 import 'people_view_page.dart';
 import 'attendance_management_page.dart';
-// import 'stream_page.dart'; // <-- NO LONGER NEEDED
 import 'create_announcement_page.dart'; 
 import 'assignment_detail_page.dart'; 
 import 'study_materials_view_page.dart' show AssignmentItem;
 // NEW IMPORTS
 import 'doubt_poll_detail_page.dart';
 import 'announcement_detail_page.dart';
-import 'stream_page.dart' show Announcement; // Only for Announcement model
+import 'stream_page.dart' show Announcement; 
+import 'study_groups_view_page.dart'; // <--- NEW: Import Study Groups View
 
 class CourseDashboardPage extends StatefulWidget {
-  // ... (Constructor is unchanged)
   final String classId;
   final String className;
   final String classCode;
@@ -34,7 +33,6 @@ class CourseDashboardPage extends StatefulWidget {
 }
 
 class _CourseDashboardPageState extends State<CourseDashboardPage> {
-  // ... (All code here is unchanged)
   int _selectedIndex = 0;
   late final Future<bool> _isInstructorFuture;
 
@@ -82,7 +80,7 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
 
           final List<Widget> _widgetOptions = <Widget>[
             // 0: Stream
-            StreamTab( // <-- This is the fully updated StreamTab
+            StreamTab( 
               className: widget.className,
               classCode: widget.classCode,
               classId: widget.classId,     
@@ -96,6 +94,8 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
             AttendanceManagementPage(classId: widget.classId),
             // 4: Discussion
             DoubtPollsViewPage(classId: widget.classId), 
+            // 5: GROUPS <--- NEW ADDITION
+            StudyGroupsViewPage(classId: widget.classId),
           ];
 
           return _widgetOptions.elementAt(_selectedIndex);
@@ -103,13 +103,13 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
       ), 
       
       bottomNavigationBar: BottomNavigationBar(
-        // ... (Unchanged)
         items: const <BottomNavigationBarItem>[
           BottomNavigationBarItem(icon: Icon(Icons.stream), label: 'Stream'),
           BottomNavigationBarItem(icon: Icon(Icons.class_outlined), label: 'Classworks'),
           BottomNavigationBarItem(icon: Icon(Icons.people), label: 'People'),
           BottomNavigationBarItem(icon: Icon(Icons.check_box), label: 'Attendance'),
           BottomNavigationBarItem(icon: Icon(Icons.forum), label: 'Discussion'),
+          BottomNavigationBarItem(icon: Icon(Icons.groups), label: 'Groups'), // <--- NEW ICON
         ],
         currentIndex: _selectedIndex,
         selectedItemColor: primaryColor,
@@ -186,7 +186,6 @@ class StreamTab extends StatelessWidget {
           // --- Class Info Card (Instructor Only) ---
           if (isInstructor)
             Container(
-              // ... (Unchanged)
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(color: primaryColor, borderRadius: BorderRadius.circular(15), boxShadow: [BoxShadow(color: primaryColor.withOpacity(0.4), blurRadius: 10, offset: const Offset(0, 5))]),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -206,7 +205,6 @@ class StreamTab extends StatelessWidget {
           // --- Announce Button (Instructor Only) ---
           if (isInstructor)
             Container(
-              // ... (Unchanged)
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(color: isDark ? const Color(0xFF1C2237) : Colors.white, borderRadius: BorderRadius.circular(15), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 5, offset: const Offset(0, 3))]),
               child: ListTile(
@@ -298,7 +296,6 @@ class StreamTab extends StatelessWidget {
 
   // --- Widget for "Upcoming Item" (Unchanged) ---
   Widget _buildUpcomingItem(BuildContext context, AssignmentItem assignment) {
-    // ... (This function is unchanged)
     final isDark = Theme.of(context).brightness == Brightness.dark;
     String formattedDueDate() {
       final date = assignment.dueDate.toDate();
