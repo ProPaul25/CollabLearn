@@ -1,4 +1,4 @@
-// lib/course_dashboard_page.dart - FINAL VERSION WITH STUDY GROUPS
+// lib/course_dashboard_page.dart - FINAL VERSION
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart'; 
@@ -10,13 +10,14 @@ import 'attendance_management_page.dart';
 import 'create_announcement_page.dart'; 
 import 'assignment_detail_page.dart'; 
 import 'study_materials_view_page.dart' show AssignmentItem;
-// NEW IMPORTS
 import 'doubt_poll_detail_page.dart';
 import 'announcement_detail_page.dart';
 import 'stream_page.dart' show Announcement; 
-import 'study_groups_view_page.dart'; // <--- NEW: Import Study Groups View
+import 'study_groups_view_page.dart'; 
+import 'package:url_launcher/url_launcher.dart'; // <-- NEW IMPORT
 
 class CourseDashboardPage extends StatefulWidget {
+  // ... (Constructor is unchanged)
   final String classId;
   final String className;
   final String classCode;
@@ -33,6 +34,7 @@ class CourseDashboardPage extends StatefulWidget {
 }
 
 class _CourseDashboardPageState extends State<CourseDashboardPage> {
+  // ... (All state logic is unchanged)
   int _selectedIndex = 0;
   late final Future<bool> _isInstructorFuture;
 
@@ -59,8 +61,8 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
 
   @override
   Widget build(BuildContext context) {
+    // ... (This build method is unchanged)
     final primaryColor = Theme.of(context).colorScheme.primary;
-
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.className),
@@ -68,40 +70,29 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
         foregroundColor: Colors.white,
         elevation: 0,
       ),
-      
       body: FutureBuilder<bool>(
         future: _isInstructorFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-
           final bool isInstructor = snapshot.data ?? false;
-
           final List<Widget> _widgetOptions = <Widget>[
-            // 0: Stream
             StreamTab( 
               className: widget.className,
               classCode: widget.classCode,
               classId: widget.classId,     
               isInstructor: isInstructor, 
             ),
-            // 1: Classworks
             StudyMaterialsViewPage(classId: widget.classId), 
-            // 2: People
             PeopleViewPage(classId: widget.classId),
-            // 3: Attendance
             AttendanceManagementPage(classId: widget.classId),
-            // 4: Discussion
             DoubtPollsViewPage(classId: widget.classId), 
-            // 5: GROUPS <--- NEW ADDITION
             StudyGroupsViewPage(classId: widget.classId),
           ];
-
           return _widgetOptions.elementAt(_selectedIndex);
         },
       ), 
-      
       bottomNavigationBar: BottomNavigationBar(
         items: const <BottomNavigationBarItem>[
           BottomNavigationBarItem(icon: Icon(Icons.stream), label: 'Stream'),
@@ -109,7 +100,7 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
           BottomNavigationBarItem(icon: Icon(Icons.people), label: 'People'),
           BottomNavigationBarItem(icon: Icon(Icons.check_box), label: 'Attendance'),
           BottomNavigationBarItem(icon: Icon(Icons.forum), label: 'Discussion'),
-          BottomNavigationBarItem(icon: Icon(Icons.groups), label: 'Groups'), // <--- NEW ICON
+          BottomNavigationBarItem(icon: Icon(Icons.groups), label: 'Groups'),
         ],
         currentIndex: _selectedIndex,
         selectedItemColor: primaryColor,
@@ -122,7 +113,7 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
 }
 
 // ===================================================================
-// 1. DEDICATED STREAM TAB WIDGET (FULLY REBUILT)
+// DEDICATED STREAM TAB WIDGET (UPDATED)
 // ===================================================================
 
 class StreamTab extends StatelessWidget {
@@ -139,7 +130,7 @@ class StreamTab extends StatelessWidget {
     required this.isInstructor, 
   });
 
-  // --- FIX: Stream for Upcoming Assignments (Unchanged) ---
+  // --- (Functions _getUpcomingAssignmentsStream, _getClassFeedStream, _timeAgo are unchanged) ---
   Stream<List<AssignmentItem>> _getUpcomingAssignmentsStream(String courseId) {
     return FirebaseFirestore.instance
         .collection('assignments')
@@ -155,7 +146,6 @@ class StreamTab extends StatelessWidget {
     });
   }
 
-  // --- NEW: Stream for the unified Class Feed ---
   Stream<List<DocumentSnapshot>> _getClassFeedStream(String courseId) {
     return FirebaseFirestore.instance
         .collection('class_feed')
@@ -172,8 +162,19 @@ class StreamTab extends StatelessWidget {
       return '${timestamp.toDate().day}/${timestamp.toDate().month}';
   }
 
+  // --- NEW: URL LAUNCHER HELPER ---
+  Future<void> _launchUrl(String url) async {
+    if (url.isEmpty) return;
+    final uri = Uri.parse(url);
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      throw Exception('Could not launch $uri');
+    }
+  }
+  // ---------------------------------
+
   @override
   Widget build(BuildContext context) {
+    // ... (Build method UI is unchanged until the Recent Posts StreamBuilder) ...
     final primaryColor = Theme.of(context).colorScheme.primary;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -183,7 +184,6 @@ class StreamTab extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           
-          // --- Class Info Card (Instructor Only) ---
           if (isInstructor)
             Container(
               padding: const EdgeInsets.all(20),
@@ -202,7 +202,6 @@ class StreamTab extends StatelessWidget {
           if (isInstructor)
             const SizedBox(height: 25),
 
-          // --- Announce Button (Instructor Only) ---
           if (isInstructor)
             Container(
               padding: const EdgeInsets.all(10),
@@ -219,7 +218,6 @@ class StreamTab extends StatelessWidget {
           if (isInstructor)
             const SizedBox(height: 25),
 
-          // --- Upcoming Events/Assignments Section (Unchanged) ---
           Text(
             'Upcoming Activities',
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87),
@@ -248,13 +246,13 @@ class StreamTab extends StatelessWidget {
           
           const SizedBox(height: 25),
 
-          // --- FIX: Recent Posts/Activity Feed (Now reads from class_feed) ---
           Text(
             'Recent Posts', 
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87),
           ),
           const SizedBox(height: 10),
           
+          // --- UPDATED: This StreamBuilder now handles 'material' type ---
           StreamBuilder<List<DocumentSnapshot>>(
             stream: _getClassFeedStream(classId),
             builder: (context, snapshot) {
@@ -278,6 +276,11 @@ class StreamTab extends StatelessWidget {
               return Column(
                 children: feedItems.map((doc) {
                   final data = doc.data() as Map<String, dynamic>;
+                  // --- NEW LOGIC ---
+                  if (data['type'] == 'material') {
+                    return _buildMaterialFeedCard(context, data);
+                  }
+                  // --- END NEW LOGIC ---
                   if (data['type'] == 'announcement') {
                     return _buildAnnouncementFeedCard(context, data);
                   }
@@ -294,7 +297,7 @@ class StreamTab extends StatelessWidget {
     );
   }
 
-  // --- Widget for "Upcoming Item" (Unchanged) ---
+  // ... (_buildUpcomingItem, _buildAnnouncementFeedCard, _buildDoubtFeedCard are unchanged) ...
   Widget _buildUpcomingItem(BuildContext context, AssignmentItem assignment) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     String formattedDueDate() {
@@ -325,17 +328,15 @@ class StreamTab extends StatelessWidget {
     );
   }
 
-  // --- NEW: Card for "Announcement" items in the feed ---
   Widget _buildAnnouncementFeedCard(BuildContext context, Map<String, dynamic> data) {
     final announcement = Announcement(
-      id: '', // Not needed for detail navigation from here
+      id: '',
       title: data['title'] ?? '',
       content: data['content'] ?? '',
       postedBy: data['postedBy'] ?? '',
       postedOn: data['lastActivityTimestamp'] ?? Timestamp.now(),
       courseId: data['courseId'] ?? '',
     );
-
     return Card(
       elevation: 2,
       margin: const EdgeInsets.only(bottom: 15),
@@ -346,10 +347,7 @@ class StreamTab extends StatelessWidget {
           backgroundColor: Colors.blueAccent,
           child: Icon(Icons.campaign_outlined, color: Colors.white),
         ),
-        title: Text(
-          announcement.title,
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
+        title: Text(announcement.title, style: const TextStyle(fontWeight: FontWeight.w600)),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -374,20 +372,16 @@ class StreamTab extends StatelessWidget {
     );
   }
 
-  // --- NEW: Card for "Doubt" items in the feed ---
   Widget _buildDoubtFeedCard(BuildContext context, Map<String, dynamic> data) {
     final pollId = data['pollId'] as String? ?? '';
     final lastActivity = data['lastActivityTimestamp'] as Timestamp? ?? Timestamp.now();
     final answersCount = data['answersCount'] as int? ?? 0;
-    
-    // Determine the text based on answers
     String activityText;
     if (answersCount == 0) {
       activityText = 'Posted by ${data['postedBy']} • ${_timeAgo(lastActivity)}';
     } else {
       activityText = '$answersCount ${answersCount == 1 ? "answer" : "answers"} • Last reply ${_timeAgo(lastActivity)}';
     }
-
     return Card(
       elevation: 2,
       margin: const EdgeInsets.only(bottom: 15),
@@ -398,10 +392,7 @@ class StreamTab extends StatelessWidget {
           backgroundColor: Colors.green,
           child: Icon(Icons.help_outline, color: Colors.white),
         ),
-        title: Text(
-          data['question'] ?? 'No Question',
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
+        title: Text(data['question'] ?? 'No Question', style: const TextStyle(fontWeight: FontWeight.w600)),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -414,7 +405,6 @@ class StreamTab extends StatelessWidget {
         ),
         isThreeLine: false,
         onTap: () {
-          // Navigate to the full doubt detail page
           Navigator.of(context).push(
             MaterialPageRoute(
               builder: (context) => DoubtPollDetailPage(
@@ -423,7 +413,7 @@ class StreamTab extends StatelessWidget {
                 initialPollData: {
                   'question': data['question'] ?? '',
                   'postedBy': data['postedBy'] ?? '',
-      'postedById': data['postedById'] ?? '',
+                  'postedById': data['postedById'] ?? '',
                   'postedOn': data['postedOn'] as Timestamp? ?? Timestamp.now(),
                   'answersCount': answersCount,
                 },
@@ -431,6 +421,44 @@ class StreamTab extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+
+  // --- NEW: Card for "Material" items in the feed ---
+  Widget _buildMaterialFeedCard(BuildContext context, Map<String, dynamic> data) {
+    final lastActivity = data['lastActivityTimestamp'] as Timestamp? ?? Timestamp.now();
+    final fileUrl = data['fileUrl'] as String? ?? '';
+
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.only(bottom: 15),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      child: ListTile(
+        contentPadding: const EdgeInsets.all(10),
+        leading: const CircleAvatar(
+          backgroundColor: Colors.purple,
+          child: Icon(Icons.book_outlined, color: Colors.white),
+        ),
+        title: Text(
+          data['title'] ?? 'New Material',
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 4),
+            Text('File: ${data['fileName'] ?? '...'}'), // Show the file name
+            const SizedBox(height: 8),
+            Text(
+              'Posted by ${data['postedBy']} • ${_timeAgo(lastActivity)}',
+              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.secondary),
+            ),
+          ],
+        ),
+        isThreeLine: true,
+        onTap: () => _launchUrl(fileUrl), // Open the file
+        trailing: Icon(Icons.download_for_offline, color: Colors.grey),
       ),
     );
   }

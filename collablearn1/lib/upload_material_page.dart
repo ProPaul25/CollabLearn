@@ -1,15 +1,14 @@
-// lib/upload_material_page.dart - FINAL CLOUDINARY UPLOAD FIX (v7)
+// lib/upload_material_page.dart - CORRECTED
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb; 
-import 'dart:typed_data'; // Required for ByteData/Uint8List manipulation
-
-// --- CLOUDINARY DEPENDENCY & INITIALIZATION ---
+import 'dart:typed_data'; 
 import 'package:cloudinary_public/cloudinary_public.dart'; 
 
+// --- (Cloudinary setup is unchanged) ---
 const String _CLOUD_NAME = 'dc51dx2da'; 
 const String _UPLOAD_PRESET = 'CollabLearn'; 
 
@@ -19,7 +18,6 @@ final CloudinaryPublic cloudinary = CloudinaryPublic(
   cache: false,
 );
 // ------------------------------------
-
 
 class UploadMaterialPage extends StatefulWidget {
   final String classId;
@@ -41,15 +39,16 @@ class _UploadMaterialPageState extends State<UploadMaterialPage> {
   bool _isLoading = false;
   double _uploadProgress = 0; 
 
-
   @override
   void dispose() {
+    // ... (dispose is unchanged)
     _titleController.dispose();
     _descriptionController.dispose();
     super.dispose();
   }
 
   Future<String> _getCurrentUserName() async {
+    // ... (This function is unchanged)
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
@@ -63,11 +62,11 @@ class _UploadMaterialPageState extends State<UploadMaterialPage> {
   }
 
   Future<void> _pickFile() async {
+    // ... (This function is unchanged)
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf', 'pptx', 'docx', 'zip', 'jpg', 'png'],
     );
-
     if (result != null) {
       setState(() {
         _pickedFile = result.files.first;
@@ -76,9 +75,14 @@ class _UploadMaterialPageState extends State<UploadMaterialPage> {
   }
 
 
-  // --- 2. UPLOAD & SUBMIT (MODIFIED CLOUDINARY LOGIC) ---
+  // --- UPDATED: This now writes to `study_materials` AND `class_feed` ---
   Future<void> _uploadAndSubmit() async {
     if (!_formKey.currentState!.validate() || _pickedFile == null) {
+      if (_pickedFile == null) {
+         ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please select a file to upload.'), backgroundColor: Colors.orange),
+        );
+      }
       return;
     }
     
@@ -88,9 +92,11 @@ class _UploadMaterialPageState extends State<UploadMaterialPage> {
     });
 
     try {
-      final user = FirebaseAuth.instance.currentUser;
+      final user = FirebaseAuth.instance.currentUser!;
       final userName = await _getCurrentUserName();
+      final postTime = Timestamp.now();
       
+      // 1. Determine Resource Type (Unchanged)
       CloudinaryResourceType resourceType;
       if (_pickedFile!.extension!.contains('pdf') || _pickedFile!.extension!.contains('doc') || _pickedFile!.extension!.contains('zip') || _pickedFile!.extension!.contains('pptx')) {
           resourceType = CloudinaryResourceType.Raw; 
@@ -98,12 +104,10 @@ class _UploadMaterialPageState extends State<UploadMaterialPage> {
           resourceType = CloudinaryResourceType.Image;
       }
       
-      // 1. Upload to Cloudinary
+      // 2. Prepare File for Upload (Unchanged)
       CloudinaryFile fileToUpload;
-
       if (kIsWeb) {
         if (_pickedFile!.bytes == null) throw Exception("File bytes missing for web upload.");
-        // FIX: Removed unsupported 'extension' parameter
         fileToUpload = CloudinaryFile.fromByteData(
           _pickedFile!.bytes!.buffer.asByteData(), 
           resourceType: resourceType,
@@ -112,7 +116,6 @@ class _UploadMaterialPageState extends State<UploadMaterialPage> {
         );
       } else {
         if (_pickedFile!.path == null) throw Exception("File path missing for mobile upload.");
-        // FIX: Removed unsupported 'extension' parameter
         fileToUpload = CloudinaryFile.fromFile(
           _pickedFile!.path!, 
           resourceType: resourceType,
@@ -120,7 +123,7 @@ class _UploadMaterialPageState extends State<UploadMaterialPage> {
         );
       }
 
-
+      // 3. Upload to Cloudinary (Unchanged)
       final CloudinaryResponse response = await cloudinary.uploadFile(
         fileToUpload,
         onProgress: (count, total) {
@@ -139,20 +142,41 @@ class _UploadMaterialPageState extends State<UploadMaterialPage> {
       final downloadUrl = response.secureUrl;
       final cloudinaryPublicId = response.publicId;
 
-      // 2. Save metadata to Firestore
-      await FirebaseFirestore.instance.collection('study_materials').add({
+      // 4. --- NEW: Use a Batch Write ---
+      final batch = FirebaseFirestore.instance.batch();
+
+      // Operation 1: Save metadata to 'study_materials' (for Classworks tab)
+      final materialRef = FirebaseFirestore.instance.collection('study_materials').doc();
+      batch.set(materialRef, {
         'title': _titleController.text.trim(),
         'description': _descriptionController.text.trim(),
-        'fileUrl': downloadUrl, // <-- CLOUDINARY SECURE URL
-        'cloudinaryPublicId': cloudinaryPublicId, // <-- New Field
+        'fileUrl': downloadUrl,
+        'cloudinaryPublicId': cloudinaryPublicId,
         'fileName': _pickedFile!.name,
         'fileSize': _pickedFile!.size,
         'fileExtension': _pickedFile!.extension,
         'courseId': widget.classId,
-        'uploaderId': user!.uid,
+        'uploaderId': user.uid,
         'uploaderName': userName,
-        'uploadedOn': Timestamp.now(),
+        'uploadedOn': postTime,
       });
+
+      // Operation 2: Save to 'class_feed' (for Stream tab)
+      final feedRef = FirebaseFirestore.instance.collection('class_feed').doc();
+      batch.set(feedRef, {
+        'type': 'material', // <-- NEW TYPE
+        'title': _titleController.text.trim(),
+        'fileName': _pickedFile!.name,
+        'fileUrl': downloadUrl,
+        'courseId': widget.classId,
+        'postedBy': userName,
+        'postedById': user.uid,
+        'lastActivityTimestamp': postTime, // Used for sorting
+        'pollId': null,
+      });
+
+      // Commit both operations
+      await batch.commit();
 
       if (mounted) {
         Navigator.pop(context);
@@ -179,8 +203,8 @@ class _UploadMaterialPageState extends State<UploadMaterialPage> {
 
   @override
   Widget build(BuildContext context) {
+    // ... (UI is unchanged)
     final primaryColor = Theme.of(context).colorScheme.primary;
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Upload Study Material'),
@@ -194,15 +218,12 @@ class _UploadMaterialPageState extends State<UploadMaterialPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              // Title Field
               TextFormField(
                 controller: _titleController,
                 decoration: const InputDecoration(labelText: 'Title (e.g., Week 5 Slides)'),
                 validator: (value) => value!.isEmpty ? 'Title is required' : null,
               ),
               const SizedBox(height: 20),
-              
-              // Description Field
               TextFormField(
                 controller: _descriptionController,
                 maxLines: 4,
@@ -210,17 +231,12 @@ class _UploadMaterialPageState extends State<UploadMaterialPage> {
                 validator: (value) => value!.isEmpty ? 'Description is required' : null,
               ),
               const SizedBox(height: 30),
-
-              // File Picker Button
               ElevatedButton.icon(
                 onPressed: _pickFile,
                 icon: const Icon(Icons.folder_open),
                 label: Text(_pickedFile == null ? 'Select File' : 'Change File'),
               ),
-              
               const SizedBox(height: 10),
-              
-              // Selected File Display
               if (_pickedFile != null)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -233,10 +249,7 @@ class _UploadMaterialPageState extends State<UploadMaterialPage> {
                     ],
                   ),
                 ),
-
               const SizedBox(height: 40),
-
-              // Upload Progress Bar
               if (_isLoading)
                 Column(
                   children: [
@@ -248,8 +261,6 @@ class _UploadMaterialPageState extends State<UploadMaterialPage> {
                     const SizedBox(height: 10),
                   ],
                 ),
-
-              // Submit Button
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
