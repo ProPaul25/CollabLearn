@@ -1,8 +1,26 @@
-// lib/user_progress_tracker_page.dart
+// lib/user_progress_tracker_page.dart - MODIFIED FOR PER-CLASS ATTENDANCE
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+
+// --- NEW Data Model for Per-Class Attendance ---
+class ClassAttendanceSummary {
+  final String classId;
+  final String className;
+  final int totalSessions;
+  final int attendedSessions;
+  final int percentage;
+
+  ClassAttendanceSummary({
+    required this.classId,
+    required this.className,
+    required this.totalSessions,
+    required this.attendedSessions,
+    required this.percentage,
+  });
+}
+// ---------------------------------------------
 
 class UserProgressTrackerPage extends StatefulWidget {
   const UserProgressTrackerPage({super.key});
@@ -16,10 +34,15 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
   String _userName = 'User';
 
   // State variables for dynamic metrics
-  int _attendancePercentage = 0;
+  int _overallAttendancePercentage = 0; // Renamed for clarity
   int _quizAverage = 0;
   int _goalProgress = 0;
-  final int _goalTarget = 85; // Target from your Figma design
+  final int _goalTarget = 85; // Original Target for General Goal
+  final int _attendanceTarget = 70; // New target for overall attendance
+  
+  // --- NEW STATE VARIABLE for Per-Class Attendance ---
+  List<ClassAttendanceSummary> _classAttendance = [];
+  // ----------------------------------------------------
 
   // Dynamic list for Performance Overview/Mid Exams
   List<Map<String, dynamic>> _midExamPerformance = [];
@@ -29,6 +52,65 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
     super.initState();
     _fetchPerformanceData();
   }
+  
+  // --- NEW FUNCTION: Fetch & Calculate Per-Class Attendance ---
+  Future<List<ClassAttendanceSummary>> _fetchClassAttendance(String userId, List<dynamic> classIds) async {
+    List<ClassAttendanceSummary> summaries = [];
+    final firestore = FirebaseFirestore.instance;
+
+    for (var classId in classIds) {
+      if (classId is! String || classId.isEmpty) continue;
+
+      // 1. Get Class Name
+      final classDoc = await firestore.collection('classes').doc(classId).get();
+      final className = classDoc.data()?['className'] ?? 'Unknown Class';
+      
+      // 2. Count Total Sessions for this class (that have ended)
+      final totalSessionsSnapshot = await firestore
+          .collection('attendance_sessions')
+          .where('courseId', isEqualTo: classId)
+          .count()
+          .get();
+      final totalSessions = totalSessionsSnapshot.count ?? 0;
+      
+      // 3. Count Attended Sessions by the user
+      final attendedRecordsSnapshot = await firestore
+          .collection('attendance_records')
+          .where('courseId', isEqualTo: classId)
+          .where('studentId', isEqualTo: userId)
+          .count()
+          .get();
+      final attendedSessions = attendedRecordsSnapshot.count ?? 0;
+      
+      // 4. Calculate Percentage
+      final percentage = totalSessions > 0 
+          ? ((attendedSessions / totalSessions) * 100).round()
+          : 100;
+
+      summaries.add(ClassAttendanceSummary(
+        classId: classId,
+        className: className,
+        totalSessions: totalSessions,
+        attendedSessions: attendedSessions,
+        percentage: percentage,
+      ));
+    }
+    
+    // Calculate the overall average based on the fetched data (simple average of percentages)
+    final overallAvg = summaries.isNotEmpty
+      ? (summaries.map((s) => s.percentage).reduce((a, b) => a + b) / summaries.length).round()
+      : 0;
+      
+    if (mounted) {
+      setState(() {
+        _overallAttendancePercentage = overallAvg;
+      });
+    }
+
+    return summaries;
+  }
+  // -----------------------------------------------------------
+
 
   Future<void> _fetchPerformanceData() async {
     final user = FirebaseAuth.instance.currentUser;
@@ -38,8 +120,10 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
     }
 
     try {
-      // 1. Load User Name
+      // 1. Load User Data (Name and Enrolled Classes)
       final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      
+      List<dynamic> classIds = [];
       if (userDoc.exists) {
         final data = userDoc.data();
         final firstName = data?['firstName'] ?? '';
@@ -49,17 +133,23 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
             _userName = (firstName.isNotEmpty || lastName.isNotEmpty) ? '$firstName $lastName' : user.displayName ?? 'User';
           });
         }
+        
+        if (data != null && data.containsKey('enrolledClasses') && data['enrolledClasses'] is List) {
+            classIds = List<String>.from(data['enrolledClasses']);
+        }
       }
-
+      
+      // --- MODIFIED STEP: Fetch overall attendance and per-class summary ---
+      final classAttendanceSummary = await _fetchClassAttendance(user.uid, classIds);
+      // We rely on _fetchClassAttendance to set _overallAttendancePercentage
+      
       // 2. Fetch Overall Progress Data from 'progress_tracker'
-      // This collection will dynamically hold the latest calculated metrics for each user.
       final progressDoc = await FirebaseFirestore.instance
           .collection('progress_tracker')
-          .doc(user.uid) // Document ID is the user's UID
+          .doc(user.uid)
           .get();
 
       // 3. Fetch Mid Exam Performance Data from a sub-collection (e.g., 'exams')
-      // This assumes that detailed exam results are stored under the user's profile.
       final examsSnapshot = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
@@ -73,8 +163,7 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
         final data = progressDoc.data();
         if (mounted) {
           setState(() {
-            // Overall Metrics (Dynamic)
-            _attendancePercentage = data?['overallAttendance'] as int? ?? 92; 
+            _classAttendance = classAttendanceSummary; // Set new state variable
             _quizAverage = data?['overallQuizAverage'] as int? ?? 87; 
             _goalProgress = data?['overallGoalProgress'] as int? ?? 82;
 
@@ -98,7 +187,7 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
          // Use default Figma values if no progress document exists
          if (mounted) {
            setState(() {
-             _attendancePercentage = 92;
+             _classAttendance = classAttendanceSummary; // Set new state variable
              _quizAverage = 87;
              _goalProgress = 82;
              _midExamPerformance = [
@@ -134,29 +223,30 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // --- Welcome Banner (Figma: Good Morning!) ---
+                  // --- Welcome Banner ---
                   Text(
-                    'Welcome! $_userName', // Based on Figma design
+                    'Welcome! $_userName',
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: primaryColor),
                   ),
                   const SizedBox(height: 5),
                   const Text(
-                    'Ready to achieve your goals today?', // Based on Figma design
+                    'Ready to achieve your goals today?',
                     style: TextStyle(fontSize: 16, color: Colors.grey),
                   ),
                   const SizedBox(height: 25),
 
-                  // --- Top Metrics Row (Attendance & Quiz Average) ---
+                  // --- NEW SECTION: Overall Attendance Goal Tracker ---
+                  _buildAttendanceGoalTracker(primaryColor),
+                  const SizedBox(height: 30),
+                  
+                  // --- NEW SECTION: Per-Class Attendance Summary ---
+                  _buildPerClassAttendanceSummary(primaryColor),
+                  const SizedBox(height: 30),
+                  
+                  // --- Quiz Average Card ---
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      _buildMetricCard(
-                        context,
-                        title: 'Attendance',
-                        value: '$_attendancePercentage%',
-                        feedback: _attendancePercentage >= 90 ? 'Great job!' : 'Needs attention', 
-                        icon: Icons.check_circle_outline,
-                      ),
                       _buildMetricCard(
                         context,
                         title: 'Quiz Average',
@@ -170,7 +260,7 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
 
                   // --- Performance Overview (Mid Exams) ---
                   const Text(
-                    'Performance Overview', // Based on Figma design
+                    'Performance Overview',
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                   const Divider(thickness: 1),
@@ -181,7 +271,7 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
                       )),
                   const SizedBox(height: 30),
 
-                  // --- Goal Progress Tracker ---
+                  // --- Goal Progress Tracker (Original) ---
                   _buildGoalProgress(primaryColor),
                 ],
               ),
@@ -189,9 +279,131 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
     );
   }
 
+  // --- NEW WIDGET: Per-Class Attendance Summary ---
+  Widget _buildPerClassAttendanceSummary(Color primaryColor) {
+    if (_classAttendance.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Class Attendance Summary',
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+        ),
+        const Divider(thickness: 1),
+        // Use Column/ListView.builder with shrinkWrap/physics for scrolling compatibility
+        Column(
+          children: _classAttendance.map((summary) => _buildClassAttendanceTile(summary, primaryColor)).toList(),
+        ),
+      ],
+    );
+  }
+  
+  Widget _buildClassAttendanceTile(ClassAttendanceSummary summary, Color primaryColor) {
+    final bool isSafe = summary.percentage >= _attendanceTarget;
+    final Color color = isSafe ? Colors.green : Colors.red;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: color.withOpacity(0.1),
+          child: Text(
+            '${summary.percentage}%', 
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: color)
+          ),
+        ),
+        title: Text(
+          summary.className,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        subtitle: Text(
+          'Attended ${summary.attendedSessions} of ${summary.totalSessions} sessions.',
+          style: const TextStyle(color: Colors.grey),
+        ),
+        trailing: Icon(
+          isSafe ? Icons.check_circle : Icons.warning,
+          color: color,
+        ),
+      ),
+    );
+  }
+  // --- END NEW WIDGET: Per-Class Attendance Summary ---
+
+
+  // --- WIDGET: Combined Attendance Goal Tracker (Renamed from _attendancePercentage to _overallAttendancePercentage) ---
+  Widget _buildAttendanceGoalTracker(Color primaryColor) {
+    final bool isSafe = _overallAttendancePercentage >= _attendanceTarget;
+    final Color progressColor = isSafe ? Colors.green : Colors.red;
+    final String feedback = isSafe 
+        ? '✅ Excellent! Your attendance is above the required minimum.' 
+        : '⚠️ Warning: You need to attend more classes to reach the 70% minimum.';
+        
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Overall Attendance Goal', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 15),
+            Row(
+              children: [
+                Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    SizedBox(
+                      width: 80,
+                      height: 80,
+                      child: CircularProgressIndicator(
+                        value: (_overallAttendancePercentage / 100.0).clamp(0.0, 1.0),
+                        backgroundColor: Colors.grey[200],
+                        valueColor: AlwaysStoppedAnimation<Color>(progressColor),
+                        strokeWidth: 8,
+                      ),
+                    ),
+                    Text(
+                      '$_overallAttendancePercentage%', 
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: progressColor)
+                    ), 
+                  ],
+                ),
+                const SizedBox(width: 20),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Target: $_attendanceTarget%',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        feedback,
+                        style: TextStyle(fontSize: 14, color: isSafe ? Colors.green.shade700 : Colors.red.shade700),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  // --- END WIDGET: Combined Attendance Goal Tracker ---
+
+
+  // --- MODIFIED _buildMetricCard (Only for Quiz Average) ---
   Widget _buildMetricCard(BuildContext context, {required String title, required String value, required String feedback, required IconData icon}) {
-    // Determine color based on metric
-    final bool isPositive = title == 'Attendance' ? _attendancePercentage >= 90 : _quizAverage >= 80;
+    final bool isPositive = _quizAverage >= 80;
     final Color iconColor = isPositive ? Colors.green : Colors.orange;
 
     return Card(
@@ -199,7 +411,7 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
       child: Container(
         padding: const EdgeInsets.all(16),
-        width: MediaQuery.of(context).size.width / 2 - 24, // Half width minus padding
+        width: MediaQuery.of(context).size.width * 0.9,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -222,6 +434,7 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
       ),
     );
   }
+  // --- END MODIFIED _buildMetricCard ---
 
   Widget _buildExamProgress(String subject, int score, Color primaryColor) {
     return Padding(
@@ -235,7 +448,7 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
               const SizedBox(width: 8),
               Text('Mid Exam: $subject', style: const TextStyle(fontWeight: FontWeight.w500)),
               const Spacer(),
-              Text('$score%', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: primaryColor)), // Score text
+              Text('$score%', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: primaryColor)),
             ],
           ),
           const SizedBox(height: 8),
@@ -266,7 +479,7 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text('Goal Progress', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  Text('Target: $_goalTarget%', style: const TextStyle(color: Colors.grey)), // Target from Figma
+                  Text('Target: $_goalTarget%', style: const TextStyle(color: Colors.grey)),
                 ],
               ),
             ),
@@ -283,7 +496,7 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
                     strokeWidth: 6,
                   ),
                 ),
-                Text('$_goalProgress%', style: const TextStyle(fontWeight: FontWeight.bold)), // Progress value
+                Text('$_goalProgress%', style: const TextStyle(fontWeight: FontWeight.bold)),
               ],
             ),
           ],
