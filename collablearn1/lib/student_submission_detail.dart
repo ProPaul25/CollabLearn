@@ -1,10 +1,10 @@
-// lib/student_submission_detail.dart
+// lib/student_submission_detail.dart - (No errors found)
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart'; 
 import 'package:url_launcher/url_launcher.dart';
-import 'study_materials_view_page.dart'; // Import AssignmentItem model
+import 'study_materials_view_page.dart'; // This import now works correctly
 
 class StudentSubmissionDetail extends StatefulWidget {
   final String submissionDocId;
@@ -25,15 +25,15 @@ class StudentSubmissionDetail extends StatefulWidget {
 }
 
 class _StudentSubmissionDetailState extends State<StudentSubmissionDetail> {
+  // ... (All state logic is unchanged) ...
   final _gradeController = TextEditingController();
-  final _feedbackController = TextEditingController(); // Added feedback controller
+  final _feedbackController = TextEditingController(); 
   final _formKey = GlobalKey<FormState>();
   bool _isSaving = false;
 
   @override
   void initState() {
     super.initState();
-    // Load initial grade and feedback if already graded
     if (widget.isGraded) {
       _fetchInitialGrade();
     }
@@ -50,7 +50,6 @@ class _StudentSubmissionDetailState extends State<StudentSubmissionDetail> {
     final submissionDoc = await FirebaseFirestore.instance.collection('assignment_submissions').doc(widget.submissionDocId).get();
     final data = submissionDoc.data();
     if (data != null) {
-      // Pre-fill fields
       if (data.containsKey('score') && data['score'] != null) {
         _gradeController.text = data['score'].toString();
       }
@@ -60,7 +59,6 @@ class _StudentSubmissionDetailState extends State<StudentSubmissionDetail> {
     }
   }
 
-  // Helper to open the submitted file URL
   Future<void> _launchUrl(String url) async {
       final uri = Uri.parse(url);
       if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
@@ -68,8 +66,8 @@ class _StudentSubmissionDetailState extends State<StudentSubmissionDetail> {
       }
     }
 
-  // Save the grade and feedback to Firestore
   Future<void> _saveGrade() async {
+    // ... (All save logic is unchanged) ...
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isSaving = true);
@@ -81,7 +79,7 @@ class _StudentSubmissionDetailState extends State<StudentSubmissionDetail> {
       await FirebaseFirestore.instance.collection('assignment_submissions').doc(widget.submissionDocId).update({
         'score': score,
         'graded': true,
-        'feedback': feedback, // Save instructor feedback
+        'feedback': feedback, 
         'gradedOn': Timestamp.now(),
       });
 
@@ -89,7 +87,7 @@ class _StudentSubmissionDetailState extends State<StudentSubmissionDetail> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Grade and review saved successfully!'), backgroundColor: Colors.green),
         );
-        Navigator.pop(context); // Go back to the Submission Review List
+        Navigator.pop(context); 
       }
     } catch (e) {
       if (mounted) {
@@ -104,9 +102,9 @@ class _StudentSubmissionDetailState extends State<StudentSubmissionDetail> {
 
   @override
   Widget build(BuildContext context) {
+    // ... (All build logic is unchanged) ...
     final primaryColor = Theme.of(context).colorScheme.primary;
 
-    // Stream the submission details for real-time updates 
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance.collection('assignment_submissions').doc(widget.submissionDocId).snapshots(),
       builder: (context, snapshot) {
@@ -119,13 +117,11 @@ class _StudentSubmissionDetailState extends State<StudentSubmissionDetail> {
           return const Scaffold(body: Center(child: Text('Submission not found.')));
         }
 
-        // --- NEW: submissionData['submittedFileUrl'] now holds the Cloudinary URL ---
         final fileUrl = submissionData['submittedFileUrl'] as String? ?? '';
         final fileName = submissionData['submittedFileName'] as String? ?? 'Submission File';
         final isGraded = submissionData['graded'] ?? false;
         final score = submissionData['score'];
 
-        // Ensure controllers reflect the latest data from the stream if initially empty
         if (_gradeController.text.isEmpty && score != null) {
           _gradeController.text = score.toString();
         }
@@ -149,7 +145,6 @@ class _StudentSubmissionDetailState extends State<StudentSubmissionDetail> {
                   Text('Assignment: ${widget.assignment.title}', style: Theme.of(context).textTheme.headlineSmall),
                   const Divider(),
 
-                  // --- Submission Info (File Download) ---
                   Card(
                     elevation: 2,
                     color: Colors.lightGreen.shade50,
@@ -158,13 +153,11 @@ class _StudentSubmissionDetailState extends State<StudentSubmissionDetail> {
                       title: Text(fileName, style: const TextStyle(fontWeight: FontWeight.bold)),
                       subtitle: Text('Submitted on: ${(submissionData['submissionTime'] as Timestamp).toDate().toString().split('.')[0]}'),
                       trailing: const Icon(Icons.open_in_new),
-                      // This tap uses the Cloudinary URL
                       onTap: fileUrl.isNotEmpty ? () => _launchUrl(fileUrl) : null,
                     ),
                   ),
                   const SizedBox(height: 20),
 
-                  // --- Grading Input ---
                   Text('Grade Details (Max Points: ${widget.assignment.points})', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 10),
 
@@ -211,7 +204,6 @@ class _StudentSubmissionDetailState extends State<StudentSubmissionDetail> {
                   ),
                   const SizedBox(height: 20),
                   
-                  // --- Feedback Input ---
                   TextFormField(
                     controller: _feedbackController,
                     maxLines: 4,
@@ -224,7 +216,6 @@ class _StudentSubmissionDetailState extends State<StudentSubmissionDetail> {
                   ),
                   const SizedBox(height: 40),
 
-                  // --- Current Status Display ---
                   Card(
                     color: isGraded 
                         ? const Color(0x1A4CAF50) // Semi-transparent Green

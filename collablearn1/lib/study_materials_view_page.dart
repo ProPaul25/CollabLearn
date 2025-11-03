@@ -1,4 +1,4 @@
-// lib/study_materials_view_page.dart
+// lib/study_materials_view_page.dart - FINAL FIXED VERSION
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -8,13 +8,40 @@ import 'upload_material_page.dart';
 import 'create_assignment_page.dart'; 
 import 'assignment_detail_page.dart'; 
 
-// --- Data Models (Update StudyMaterial) ---
+// --- Data Models (All models defined here) ---
+
+// --- MODEL 1: Assignment (Moved here to fix circular dependency) ---
+class Assignment {
+  final String id;
+  final String title;
+  final String description;
+  final int points;
+  final Timestamp dueDate;
+  final String postedBy;
+  final String courseId;
+  final String? fileUrl; 
+  final String? fileName; 
+
+  Assignment({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.points,
+    required this.dueDate,
+    required this.postedBy,
+    required this.courseId,
+    this.fileUrl, 
+    this.fileName,
+  });
+}
+
+// --- MODEL 2: StudyMaterial (Unchanged) ---
 class StudyMaterial {
   final String id;
   final String title;
   final String description;
   final String fileUrl;
-  final String cloudinaryPublicId; // <-- NEW FIELD
+  final String cloudinaryPublicId;
   final String fileName;
   final String uploaderName;
   final Timestamp uploadedOn;
@@ -26,7 +53,7 @@ class StudyMaterial {
     required this.title,
     required this.description,
     required this.fileUrl,
-    required this.cloudinaryPublicId, // <-- NEW FIELD
+    required this.cloudinaryPublicId,
     required this.fileName,
     required this.uploaderName,
     required this.uploadedOn,
@@ -40,8 +67,8 @@ class StudyMaterial {
       id: doc.id,
       title: data['title'] ?? 'Untitled Material',
       description: data['description'] ?? 'No description provided.',
-      fileUrl: data['fileUrl'] ?? '', // This now holds the Cloudinary URL
-      cloudinaryPublicId: data['cloudinaryPublicId'] ?? '', // <-- NEW FIELD
+      fileUrl: data['fileUrl'] ?? '', 
+      cloudinaryPublicId: data['cloudinaryPublicId'] ?? '',
       fileName: data['fileName'] ?? 'file',
       uploaderName: data['uploaderName'] ?? 'Unknown Uploader',
       uploadedOn: data['uploadedOn'] ?? Timestamp.now(),
@@ -50,6 +77,7 @@ class StudyMaterial {
   }
 }
 
+// --- MODEL 3: AssignmentItem (UPDATED with fileUrl/fileName) ---
 class AssignmentItem {
   final String id;
   final String title;
@@ -58,6 +86,8 @@ class AssignmentItem {
   final Timestamp dueDate;
   final String postedBy;
   final String courseId;
+  final String? fileUrl;   // <-- UPDATED
+  final String? fileName;  // <-- UPDATED
   final String type = 'assignment';
 
   AssignmentItem({
@@ -68,6 +98,8 @@ class AssignmentItem {
     required this.dueDate,
     required this.postedBy,
     required this.courseId,
+    this.fileUrl,  // <-- UPDATED
+    this.fileName, // <-- UPDATED
   });
 
   factory AssignmentItem.fromFirestore(DocumentSnapshot doc) {
@@ -81,13 +113,14 @@ class AssignmentItem {
       dueDate: data['dueDate'] ?? Timestamp.now(),
       postedBy: data['postedBy'] ?? 'Instructor',
       courseId: data['courseId'] ?? '',
+      fileUrl: data['fileUrl'] as String?,   // <-- UPDATED
+      fileName: data['fileName'] as String?, // <-- UPDATED
     );
   }
-  
+ 
   // Convert to full Assignment model for navigation
   Assignment toFullAssignment() {
-    // Note: The Assignment model is defined in assignment_detail_page.dart
-    // Assuming the file paths were updated correctly in assignment_detail_page.dart
+    // This now works because the Assignment class is defined above
     return Assignment(
       id: id,
       title: title,
@@ -96,6 +129,8 @@ class AssignmentItem {
       dueDate: dueDate,
       postedBy: postedBy,
       courseId: courseId,
+      fileUrl: fileUrl,   // <-- UPDATED
+      fileName: fileName, // <-- UPDATED
     );
   }
 }
@@ -110,12 +145,12 @@ class StudyMaterialsViewPage extends StatelessWidget {
     required this.classId,
   });
 
-  // --- REPLACED: Simple Streams for each type ---
+  // --- (All streams and functions are unchanged) ---
   Stream<List<AssignmentItem>> getAssignmentsStream(String courseId) {
     return FirebaseFirestore.instance
         .collection('assignments')
         .where('courseId', isEqualTo: courseId)
-        .orderBy('dueDate', descending: true) // Sort by due date
+        .orderBy('dueDate', descending: true) 
         .snapshots()
         .map((snapshot) => snapshot.docs.map((doc) => AssignmentItem.fromFirestore(doc)).toList());
   }
@@ -124,11 +159,10 @@ class StudyMaterialsViewPage extends StatelessWidget {
     return FirebaseFirestore.instance
         .collection('study_materials')
         .where('courseId', isEqualTo: courseId)
-        .orderBy('uploadedOn', descending: true) // Sort by upload time
+        .orderBy('uploadedOn', descending: true)
         .snapshots()
         .map((snapshot) => snapshot.docs.map((doc) => StudyMaterial.fromFirestore(doc)).toList());
   }
-  // --- End Simple Streams ---
 
 
   Future<bool> isCurrentUserInstructor(String instructorId) async {
@@ -143,7 +177,7 @@ class StudyMaterialsViewPage extends StatelessWidget {
         throw Exception('Could not launch $uri');
       }
     }
-  
+ 
   void _showInstructorOptions(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -192,32 +226,31 @@ class StudyMaterialsViewPage extends StatelessWidget {
     );
   }
 
-  // Helper function to build Study Material Cards
   Widget _buildMaterialCard(BuildContext context, StudyMaterial material) {
       return MaterialCard(
-        // NOTE: The onView callback uses material.fileUrl, which now holds the Cloudinary URL
         material: material,
         onView: () => _launchUrl(material.fileUrl), 
         isUploader: false, // Placeholder
       );
   }
 
-  // Helper function to build Assignment Cards
   Widget _buildAssignmentCard(BuildContext context, AssignmentItem assignment) {
       return AssignmentCard(
         assignment: assignment,
         onTap: () {
           Navigator.of(context).push(
             MaterialPageRoute(
+              // This now works perfectly
               builder: (context) => AssignmentDetailPage(assignment: assignment.toFullAssignment()),
             ),
           );
         },
       );
   }
-  
+ 
   @override
   Widget build(BuildContext context) {
+    // --- (This entire build method is unchanged) ---
     final primaryColor = Theme.of(context).colorScheme.primary;
 
     return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
@@ -236,15 +269,14 @@ class StudyMaterialsViewPage extends StatelessWidget {
         return FutureBuilder<bool>(
           future: isCurrentUserInstructor(instructorId), 
           builder: (context, roleSnapshot) {
-            
+           
             final isUserInstructor = roleSnapshot.data ?? false; 
 
             return Scaffold(
-              // Using a ListView to contain the two StreamBuilders and headings
               body: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
-                  
+                 
                   // --- 1. Assignments Section ---
                   const Padding(
                     padding: EdgeInsets.only(bottom: 10, top: 5),
@@ -257,7 +289,7 @@ class StudyMaterialsViewPage extends StatelessWidget {
                         return const Center(child: CircularProgressIndicator());
                       }
                       final assignments = assignmentSnapshot.data ?? [];
-                      
+                     
                       if (assignments.isEmpty) {
                         return const Padding(
                           padding: EdgeInsets.only(bottom: 20),
@@ -270,7 +302,7 @@ class StudyMaterialsViewPage extends StatelessWidget {
                       );
                     },
                   ),
-                  
+                 
                   const Divider(height: 30),
 
                   // --- 2. Study Materials Section ---
@@ -292,7 +324,7 @@ class StudyMaterialsViewPage extends StatelessWidget {
                           child: Text('No study materials uploaded yet.', style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic)),
                         );
                       }
-                      
+                     
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: materials.map((material) => _buildMaterialCard(context, material)).toList(),
@@ -301,7 +333,7 @@ class StudyMaterialsViewPage extends StatelessWidget {
                   ),
                 ],
               ),
-              
+             
               floatingActionButton: isUserInstructor
                   ? FloatingActionButton.extended(
                       onPressed: () => _showInstructorOptions(context),
@@ -320,7 +352,7 @@ class StudyMaterialsViewPage extends StatelessWidget {
 }
 
 
-// --- Study Material Card Widget (Unchanged logic, relies on the updated model) ---
+// --- Study Material Card Widget (Unchanged) ---
 class MaterialCard extends StatelessWidget {
   final StudyMaterial material;
   final VoidCallback onView;
@@ -374,7 +406,7 @@ class MaterialCard extends StatelessWidget {
       ),
     );
   }
-  
+ 
   IconData _getIcon(String fileName) {
     if (fileName.endsWith('.pdf')) return Icons.picture_as_pdf;
     if (fileName.endsWith('.pptx') || fileName.endsWith('.ppt')) return Icons.slideshow;
@@ -399,7 +431,7 @@ class AssignmentCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isOverdue = DateTime.now().isAfter(assignment.dueDate.toDate());
     final primaryColor = Theme.of(context).colorScheme.primary;
-    
+   
     // Format Due Date
     String formattedDueDate() {
       final date = assignment.dueDate.toDate();

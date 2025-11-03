@@ -1,4 +1,4 @@
-// lib/course_dashboard_page.dart - FINAL VERSION
+// lib/course_dashboard_page.dart - FIXED
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart'; 
@@ -9,12 +9,12 @@ import 'people_view_page.dart';
 import 'attendance_management_page.dart';
 import 'create_announcement_page.dart'; 
 import 'assignment_detail_page.dart'; 
-import 'study_materials_view_page.dart' show AssignmentItem;
+// import 'study_materials_view_page.dart' show AssignmentItem; // <-- REMOVED (Redundant)
 import 'doubt_poll_detail_page.dart';
 import 'announcement_detail_page.dart';
 import 'stream_page.dart' show Announcement; 
 import 'study_groups_view_page.dart'; 
-import 'package:url_launcher/url_launcher.dart'; // <-- NEW IMPORT
+import 'package:url_launcher/url_launcher.dart';
 
 class CourseDashboardPage extends StatefulWidget {
   // ... (Constructor is unchanged)
@@ -84,7 +84,7 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
               classId: widget.classId,     
               isInstructor: isInstructor, 
             ),
-            StudyMaterialsViewPage(classId: widget.classId), 
+            StudyMaterialsViewPage(classId: widget.classId), // This now correctly finds the widget
             PeopleViewPage(classId: widget.classId),
             AttendanceManagementPage(classId: widget.classId),
             DoubtPollsViewPage(classId: widget.classId), 
@@ -113,7 +113,7 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
 }
 
 // ===================================================================
-// DEDICATED STREAM TAB WIDGET (UPDATED)
+// DEDICATED STREAM TAB WIDGET (Unchanged)
 // ===================================================================
 
 class StreamTab extends StatelessWidget {
@@ -141,7 +141,7 @@ class StreamTab extends StatelessWidget {
         .snapshots()
         .map((snapshot) {
       return snapshot.docs
-          .map((doc) => AssignmentItem.fromFirestore(doc))
+          .map((doc) => AssignmentItem.fromFirestore(doc)) // This now correctly finds the model
           .toList();
     });
   }
@@ -174,7 +174,7 @@ class StreamTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // ... (Build method UI is unchanged until the Recent Posts StreamBuilder) ...
+    // ... (Build method UI is unchanged) ...
     final primaryColor = Theme.of(context).colorScheme.primary;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -252,7 +252,7 @@ class StreamTab extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           
-          // --- UPDATED: This StreamBuilder now handles 'material' type ---
+          // --- (StreamBuilder logic is unchanged) ---
           StreamBuilder<List<DocumentSnapshot>>(
             stream: _getClassFeedStream(classId),
             builder: (context, snapshot) {
@@ -320,7 +320,7 @@ class StreamTab extends StatelessWidget {
         onTap: () {
           Navigator.of(context).push(
             MaterialPageRoute(
-              builder: (context) => AssignmentDetailPage(assignment: assignment.toFullAssignment()),
+              builder: (context) => AssignmentDetailPage(assignment: assignment.toFullAssignment()), // This now works
             ),
           );
         },
@@ -425,7 +425,7 @@ class StreamTab extends StatelessWidget {
     );
   }
 
-  // --- NEW: Card for "Material" items in the feed ---
+  // --- (Unchanged) ---
   Widget _buildMaterialFeedCard(BuildContext context, Map<String, dynamic> data) {
     final lastActivity = data['lastActivityTimestamp'] as Timestamp? ?? Timestamp.now();
     final fileUrl = data['fileUrl'] as String? ?? '';

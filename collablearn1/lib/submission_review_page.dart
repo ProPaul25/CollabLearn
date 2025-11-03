@@ -1,10 +1,10 @@
-// lib/submission_review_page.dart
+// lib/submission_review_page.dart - (No errors found)
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'student_submission_detail.dart'; // Import the grading page
-import 'study_materials_view_page.dart'; // Import AssignmentItem model
+import 'student_submission_detail.dart'; 
+import 'study_materials_view_page.dart'; // This import now works correctly
 
 class SubmissionReviewPage extends StatefulWidget {
   final AssignmentItem assignment;
@@ -21,21 +21,17 @@ class SubmissionReviewPage extends StatefulWidget {
 }
 
 class _SubmissionReviewPageState extends State<SubmissionReviewPage> {
-  // Fetches a list of all students enrolled in the class
+  // ... (All state logic is unchanged) ...
   Future<List<String>> _fetchStudentIds() async {
     final classDoc = await FirebaseFirestore.instance.collection('classes').doc(widget.classId).get();
     final data = classDoc.data();
-    // Use .whereType<String>() to ensure all elements are strings
     return (data?['studentIds'] as List?)?.whereType<String>().toList() ?? [];
   }
 
-  // Fetches detailed user data for a list of UIDs
   Future<List<Map<String, dynamic>>> _fetchUsersData(List<String> uids) async {
     if (uids.isEmpty) return [];
 
     final List<Map<String, dynamic>> userList = [];
-    // Fetching iteratively is necessary if the list of students exceeds 10 
-    // due to Firestore's 'whereIn' limit.
     for (var uid in uids) {
         final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
         if (doc.exists) {
@@ -50,6 +46,7 @@ class _SubmissionReviewPageState extends State<SubmissionReviewPage> {
 
   @override
   Widget build(BuildContext context) {
+    // ... (All build logic is unchanged) ...
     final primaryColor = Theme.of(context).colorScheme.primary;
 
     return Scaffold(
@@ -78,10 +75,8 @@ class _SubmissionReviewPageState extends State<SubmissionReviewPage> {
               }
               final students = studentDataSnapshot.data ?? [];
               
-              // Sort by last name for easier management
               students.sort((a, b) => (a['lastName'] ?? '').compareTo(b['lastName'] ?? ''));
 
-              // Stream submissions to get real-time status and score
               return StreamBuilder<QuerySnapshot>(
                 stream: FirebaseFirestore.instance
                     .collection('assignment_submissions')
@@ -94,7 +89,6 @@ class _SubmissionReviewPageState extends State<SubmissionReviewPage> {
 
                   final submissionDocs = submissionSnapshot.data?.docs ?? [];
                   
-                  // Map submissions by studentId for quick lookup
                   final Map<String, Map<String, dynamic>> submissionsMap = {
                     for (var doc in submissionDocs) 
                       doc['studentId'] as String: {...doc.data() as Map<String, dynamic>, 'docId': doc.id}
@@ -103,18 +97,15 @@ class _SubmissionReviewPageState extends State<SubmissionReviewPage> {
                   int submittedCount = submissionsMap.keys.length;
                   int gradedCount = submissionsMap.values.where((sub) => sub['graded'] == true).length;
                   
-                  // Calculate missing count based on the number of enrolled students vs. number of submissions
                   int missingCount = students.length - submittedCount;
                   
-                  // Sort students to bring pending submissions (Submitted but not Graded) to the top
                   students.sort((a, b) {
                       final aSub = submissionsMap[a['uid']];
                       final bSub = submissionsMap[b['uid']];
                       
-                      final aStatus = aSub?['graded'] == true ? 2 : (aSub != null ? 1 : 0); // Graded (2), Submitted (1), Missing (0)
+                      final aStatus = aSub?['graded'] == true ? 2 : (aSub != null ? 1 : 0); 
                       final bStatus = bSub?['graded'] == true ? 2 : (bSub != null ? 1 : 0);
                       
-                      // Prioritize Missing (0) and then Submitted (1)
                       return aStatus.compareTo(bStatus); 
                   });
 
@@ -143,7 +134,6 @@ class _SubmissionReviewPageState extends State<SubmissionReviewPage> {
     );
   }
   
-  // Helper to build the summary card
   Widget _buildSummaryCard(BuildContext context, int total, int submitted, int graded, int missing) {
     return Card(
       margin: const EdgeInsets.all(16),
@@ -175,7 +165,6 @@ class _SubmissionReviewPageState extends State<SubmissionReviewPage> {
   }
 
 
-  // Helper to build a single student's submission row
   Widget _buildStudentSubmissionTile(BuildContext context, Map<String, dynamic> student, Map<String, dynamic>? submission, int maxPoints) {
     final primaryColor = Theme.of(context).colorScheme.primary;
     final name = '${student['firstName'] ?? ''} ${student['lastName'] ?? ''}'.trim();
@@ -198,7 +187,6 @@ class _SubmissionReviewPageState extends State<SubmissionReviewPage> {
       statusText = 'Graded: $score/$maxPoints';
     }
     
-    // Fallback for missing student name
     final displayName = name.isEmpty ? (student['email'] ?? 'Unknown Student') : name;
 
     return Card(
@@ -218,7 +206,7 @@ class _SubmissionReviewPageState extends State<SubmissionReviewPage> {
             Icon(statusIcon, size: 20, color: statusColor),
             const SizedBox(width: 8),
             SizedBox(
-              width: 110, // Fixed width for status text
+              width: 110, 
               child: Text(
                 statusText,
                 style: TextStyle(color: statusColor, fontWeight: FontWeight.bold),
@@ -229,19 +217,17 @@ class _SubmissionReviewPageState extends State<SubmissionReviewPage> {
             const Icon(Icons.chevron_right),
           ],
         ),
-        // Only allow tap/grading if a submission exists
         onTap: isSubmitted ? () {
           Navigator.of(context).push(
             MaterialPageRoute(
               builder: (context) => StudentSubmissionDetail(
-                submissionDocId: docId!, // Must have docId if submitted
+                submissionDocId: docId!,
                 assignment: widget.assignment,
                 studentName: displayName,
                 isGraded: isGraded,
               ),
             ),
           ).then((_) {
-            // Refresh the page to show the new grade immediately
             setState(() {}); 
           });
         } : null, 
