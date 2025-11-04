@@ -9,7 +9,6 @@ import 'people_view_page.dart';
 import 'attendance_management_page.dart';
 import 'create_announcement_page.dart'; 
 import 'assignment_detail_page.dart'; 
-// import 'study_materials_view_page.dart' show AssignmentItem; // <-- REMOVED (Redundant)
 import 'doubt_poll_detail_page.dart';
 import 'announcement_detail_page.dart';
 import 'stream_page.dart' show Announcement; 
@@ -84,7 +83,7 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
               classId: widget.classId,     
               isInstructor: isInstructor, 
             ),
-            StudyMaterialsViewPage(classId: widget.classId), // This now correctly finds the widget
+            StudyMaterialsViewPage(classId: widget.classId), 
             PeopleViewPage(classId: widget.classId),
             AttendanceManagementPage(classId: widget.classId),
             DoubtPollsViewPage(classId: widget.classId), 
@@ -113,7 +112,7 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
 }
 
 // ===================================================================
-// DEDICATED STREAM TAB WIDGET (Unchanged)
+// DEDICATED STREAM TAB WIDGET
 // ===================================================================
 
 class StreamTab extends StatelessWidget {
@@ -130,22 +129,28 @@ class StreamTab extends StatelessWidget {
     required this.isInstructor, 
   });
 
-  // --- (Functions _getUpcomingAssignmentsStream, _getClassFeedStream, _timeAgo are unchanged) ---
+  // --- (Function _getUpcomingAssignmentsStream is UPDATED) ---
   Stream<List<AssignmentItem>> _getUpcomingAssignmentsStream(String courseId) {
+    
+    final DateTime now = DateTime.now();
+    final DateTime startOfTodayLocal = DateTime(now.year, now.month, now.day);
+    final Timestamp startOfToday = Timestamp.fromDate(startOfTodayLocal);
+
     return FirebaseFirestore.instance
         .collection('assignments')
         .where('courseId', isEqualTo: courseId)
-        .where('dueDate', isGreaterThan: Timestamp.now()) 
+        .where('dueDate', isGreaterThanOrEqualTo: startOfToday) 
         .orderBy('dueDate', descending: false)
-        .limit(3)
+        // .limit(3) // <-- FIX: REMOVED limit(3) to fetch ALL upcoming items
         .snapshots()
         .map((snapshot) {
       return snapshot.docs
-          .map((doc) => AssignmentItem.fromFirestore(doc)) // This now correctly finds the model
+          .map((doc) => AssignmentItem.fromFirestore(doc)) 
           .toList();
     });
   }
 
+  // --- (Functions _getClassFeedStream, _timeAgo are unchanged) ---
   Stream<List<DocumentSnapshot>> _getClassFeedStream(String courseId) {
     return FirebaseFirestore.instance
         .collection('class_feed')
@@ -162,7 +167,7 @@ class StreamTab extends StatelessWidget {
       return '${timestamp.toDate().day}/${timestamp.toDate().month}';
   }
 
-  // --- NEW: URL LAUNCHER HELPER ----
+  // --- (URL LAUNCHER HELPER is unchanged) ---
   Future<void> _launchUrl(String url) async {
     if (url.isEmpty) return;
     final uri = Uri.parse(url);
@@ -170,11 +175,10 @@ class StreamTab extends StatelessWidget {
       throw Exception('Could not launch $uri');
     }
   }
-  // ---------------------------------
 
   @override
   Widget build(BuildContext context) {
-    // ... (Build method UI is unchanged) ...
+    // ... (Build method UI is unchanged up to the StreamBuilder) ...
     final primaryColor = Theme.of(context).colorScheme.primary;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -223,6 +227,8 @@ class StreamTab extends StatelessWidget {
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87),
           ),
           const SizedBox(height: 10),
+          
+          // --- (Upcoming Activities StreamBuilder is UPDATED) ---
           StreamBuilder<List<AssignmentItem>>(
             stream: _getUpcomingAssignmentsStream(classId),
             builder: (context, snapshot) {
@@ -236,11 +242,41 @@ class StreamTab extends StatelessWidget {
                   child: Center(child: Text('No upcoming assignments or quizzes.')),
                 );
               }
+              
+              // --- NEW LOGIC: Separate list into visible and hidden ---
+              final visibleItems = upcomingItems.take(3).toList();
+              final hiddenItems = upcomingItems.length > 3 ? upcomingItems.skip(3).toList() : <AssignmentItem>[];
+
               return Column(
-                children: upcomingItems.map((assignment) {
-                  return _buildUpcomingItem(context, assignment);
-                }).toList(),
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // 1. Build the always-visible items (first 3)
+                  ...visibleItems.map((assignment) {
+                    return _buildUpcomingItem(context, assignment);
+                  }).toList(),
+                  
+                  // 2. Build the dropdown for the rest
+                  if (hiddenItems.isNotEmpty)
+                    Card(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      color: isDark ? const Color(0xFF1C2237) : Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      elevation: 1,
+                      child: ExpansionTile(
+                        title: Text(
+                          'View ${hiddenItems.length} more',
+                          style: TextStyle(color: primaryColor, fontWeight: FontWeight.w500),
+                        ),
+                        leading: Icon(Icons.expand_more, color: primaryColor),
+                        children: hiddenItems.map((assignment) {
+                          // Re-use the same item builder
+                          return _buildUpcomingItem(context, assignment);
+                        }).toList(),
+                      ),
+                    ),
+                ],
               );
+              // --- END NEW LOGIC ---
             },
           ),
           
@@ -252,7 +288,7 @@ class StreamTab extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           
-          // --- (StreamBuilder logic is unchanged) ---
+          // --- (Recent Posts StreamBuilder is unchanged) ---
           StreamBuilder<List<DocumentSnapshot>>(
             stream: _getClassFeedStream(classId),
             builder: (context, snapshot) {
@@ -276,11 +312,9 @@ class StreamTab extends StatelessWidget {
               return Column(
                 children: feedItems.map((doc) {
                   final data = doc.data() as Map<String, dynamic>;
-                  // --- NEW LOGIC ---
                   if (data['type'] == 'material') {
                     return _buildMaterialFeedCard(context, data);
                   }
-                  // --- END NEW LOGIC ---
                   if (data['type'] == 'announcement') {
                     return _buildAnnouncementFeedCard(context, data);
                   }
@@ -297,15 +331,23 @@ class StreamTab extends StatelessWidget {
     );
   }
 
-  // ... (_buildUpcomingItem, _buildAnnouncementFeedCard, _buildDoubtFeedCard are unchanged) ...
+  // ... (_buildUpcomingItem, _buildAnnouncementFeedCard, _buildDoubtFeedCard, _buildMaterialFeedCard are all unchanged) ...
   Widget _buildUpcomingItem(BuildContext context, AssignmentItem assignment) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     String formattedDueDate() {
       final date = assignment.dueDate.toDate();
       final duration = date.difference(DateTime.now());
-      if (duration.inDays > 0) return 'Due in ${duration.inDays} days';
-      if (duration.inHours > 0) return 'Due in ${duration.inHours} hours';
-      return 'Due Today!';
+      
+      final now = DateTime.now();
+      final isDueToday = date.year == now.year && date.month == now.month && date.day == now.day;
+
+      if (duration.isNegative) {
+        return isDueToday ? 'Due Today' : 'Overdue';
+      }
+      if (isDueToday) return 'Due Today';
+      if (duration.inDays < 1) return 'Due Today'; 
+      if (duration.inDays < 2) return 'Due Tomorrow';
+      return 'Due in ${duration.inDays} days';
     }
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
@@ -320,7 +362,7 @@ class StreamTab extends StatelessWidget {
         onTap: () {
           Navigator.of(context).push(
             MaterialPageRoute(
-              builder: (context) => AssignmentDetailPage(assignment: assignment.toFullAssignment()), // This now works
+              builder: (context) => AssignmentDetailPage(assignment: assignment.toFullAssignment()),
             ),
           );
         },
@@ -425,7 +467,6 @@ class StreamTab extends StatelessWidget {
     );
   }
 
-  // --- (Unchanged) ---
   Widget _buildMaterialFeedCard(BuildContext context, Map<String, dynamic> data) {
     final lastActivity = data['lastActivityTimestamp'] as Timestamp? ?? Timestamp.now();
     final fileUrl = data['fileUrl'] as String? ?? '';
@@ -448,7 +489,7 @@ class StreamTab extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 4),
-            Text('File: ${data['fileName'] ?? '...'}'), // Show the file name
+            Text('File: ${data['fileName'] ?? '...'}'), 
             const SizedBox(height: 8),
             Text(
               'Posted by ${data['postedBy']} • ${_timeAgo(lastActivity)}',
@@ -457,7 +498,7 @@ class StreamTab extends StatelessWidget {
           ],
         ),
         isThreeLine: true,
-        onTap: () => _launchUrl(fileUrl), // Open the file
+        onTap: () => _launchUrl(fileUrl), 
         trailing: Icon(Icons.download_for_offline, color: Colors.grey),
       ),
     );

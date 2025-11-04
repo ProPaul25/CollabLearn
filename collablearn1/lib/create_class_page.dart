@@ -1,10 +1,10 @@
-// lib/create_class_page.dart
+// lib/create_class_page.dart - FIXED
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:math';
-import 'package:collablearn1/course_dashboard_page.dart'; 
+import 'course_dashboard_page.dart'; // <-- FIX: Changed to relative import
 
 class CreateClassPage extends StatefulWidget {
   const CreateClassPage({super.key});
@@ -14,6 +14,7 @@ class CreateClassPage extends StatefulWidget {
 }
 
 class _CreateClassPageState extends State<CreateClassPage> {
+  // ... (All logic is unchanged) ...
   final _formKey = GlobalKey<FormState>();
   final _classNameController = TextEditingController();
   final _classDescriptionController = TextEditingController();
@@ -63,16 +64,11 @@ class _CreateClassPageState extends State<CreateClassPage> {
       final String className = _classNameController.text.trim();
       final String classDescription = _classDescriptionController.text.trim();
 
-      // --- FIX: Use a batch write to create the class AND update the user ---
-      
-      // 1. Get references for the batch operation
-      final newClassRef = FirebaseFirestore.instance.collection('classes').doc(); // Create a reference with a new ID
+      final newClassRef = FirebaseFirestore.instance.collection('classes').doc(); 
       final userDocRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
       
-      // 2. Create the batch
       final batch = FirebaseFirestore.instance.batch();
 
-      // 3. Operation 1: Create the new class document
       batch.set(newClassRef, {
         'className': className,
         'classDescription': classDescription,
@@ -80,24 +76,18 @@ class _CreateClassPageState extends State<CreateClassPage> {
         'instructorId': user.uid,
         'instructorEmail': user.email,
         'createdAt': FieldValue.serverTimestamp(),
-        'studentIds': [], // Initialize with an empty list of students
+        'studentIds': [], 
       });
 
-      // 4. Operation 2: Add the new class ID to the instructor's 'enrolledClasses' array
       batch.update(userDocRef, {
         'enrolledClasses': FieldValue.arrayUnion([newClassRef.id]),
       });
 
-      // 5. Commit both operations atomically
       await batch.commit();
       
-      // 6. Get the ID for navigation
       final newClassId = newClassRef.id;
-      // --- END OF FIX ---
-
 
       if (mounted) {
-        // Show snackbar with success message and code
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Class "$className" created successfully! Code: $classCode'),
@@ -106,7 +96,6 @@ class _CreateClassPageState extends State<CreateClassPage> {
           ),
         );
         
-        // 7. Navigate to the newly created class's dashboard page
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -133,6 +122,7 @@ class _CreateClassPageState extends State<CreateClassPage> {
 
   @override
   Widget build(BuildContext context) {
+    // ... (Build method is unchanged) ...
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primaryColor = Theme.of(context).colorScheme.primary;
 
@@ -223,6 +213,7 @@ class _CreateClassPageState extends State<CreateClassPage> {
   }
 
   Widget _buildTextField({
+    // ... (This helper method is unchanged) ...
     required TextEditingController controller,
     required String labelText,
     required String hintText,
@@ -263,4 +254,4 @@ class _CreateClassPageState extends State<CreateClassPage> {
       },
     );
   }
-} 
+}
