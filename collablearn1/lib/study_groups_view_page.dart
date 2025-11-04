@@ -1,4 +1,4 @@
-// lib/study_groups_view_page.dart
+// lib/study_groups_view_page.dart - FIXED
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -18,17 +18,16 @@ class StudyGroupsViewPage extends StatefulWidget {
 }
 
 class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
+  // ... (All state logic is unchanged) ...
   final user = FirebaseAuth.instance.currentUser!;
   String _currentUserName = 'User';
-  
-  // New state for class roster
   List<Map<String, dynamic>> _classRoster = [];
 
   @override
   void initState() {
     super.initState();
     _loadCurrentUserName();
-    _loadClassRoster(); // Load roster for group creation
+    _loadClassRoster(); 
   }
 
   Future<void> _loadCurrentUserName() async {
@@ -45,8 +44,8 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
     }
   }
 
-  // --- NEW: Load Class Roster ---
   Future<void> _loadClassRoster() async {
+    // ... (This function is unchanged) ...
     try {
       final classDoc = await FirebaseFirestore.instance.collection('classes').doc(widget.classId).get();
       final studentIds = List<String>.from(classDoc.data()?['studentIds'] ?? []);
@@ -72,7 +71,7 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
           'name': name.isEmpty ? (data['email'] ?? 'User') : name,
           'isInstructor': doc.id == instructorId,
         };
-      }).where((u) => u['uid'] != user.uid).toList(); // Exclude current user from the invite list
+      }).where((u) => u['uid'] != user.uid).toList(); 
 
       if (mounted) {
         setState(() {
@@ -84,13 +83,12 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
     }
   }
   
-  // --- Group Creation Dialog ---
   Future<void> _showCreateGroupDialog() async {
+    // ... (This function is unchanged) ...
     final _nameController = TextEditingController();
     final _descriptionController = TextEditingController();
     final _formKey = GlobalKey<FormState>();
     
-    // State for selected users
     List<String> _selectedUids = []; 
 
     return showDialog(
@@ -116,7 +114,6 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
                     maxLines: 3,
                   ),
                   const SizedBox(height: 20),
-                  // --- NEW: Invitee Selection ---
                   const Text('Invite Class Members (Optional)', style: TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 10),
                   if (_classRoster.isEmpty)
@@ -143,7 +140,6 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
                         },
                       );
                     }).toList(),
-                  // --- END NEW: Invitee Selection ---
                 ],
               ),
             ),
@@ -159,7 +155,7 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
                   _createGroup(
                     _nameController.text.trim(), 
                     _descriptionController.text.trim(),
-                    _selectedUids, // Pass the selected UIDs
+                    _selectedUids, 
                   );
                   Navigator.pop(context);
                 }
@@ -172,10 +168,9 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
     );
   }
 
-  // --- Group Creation Logic (UPDATED) ---
   Future<void> _createGroup(String name, String description, List<String> inviteeUids) async {
+    // ... (This function is unchanged) ...
     try {
-      // The creator is a member and will be added to the inviteeUids list as well for simplicity
       final allInviteeUids = {...inviteeUids, user.uid}.toList();
 
       await FirebaseFirestore.instance.collection('study_groups').add({
@@ -184,8 +179,8 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
         'classId': widget.classId,
         'createdBy': user.uid,
         'creatorName': _currentUserName,
-        'memberUids': [user.uid], // Creator is the first member
-        'inviteeUids': allInviteeUids, // NEW: List of all invited/allowed UIDs
+        'memberUids': [user.uid], 
+        'inviteeUids': allInviteeUids, 
         'createdAt': FieldValue.serverTimestamp(),
       });
     } catch (e) {
@@ -197,25 +192,24 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
     }
   }
 
- // --- Group List Stream (UPDATED for private groups) ---
+ // --- Group List Stream (FIXED) ---
   Stream<QuerySnapshot> _getStudyGroupsStream() {
     return FirebaseFirestore.instance
         .collection('study_groups')
         .where('classId', isEqualTo: widget.classId)
-        // NEW LOGIC: Only fetch groups where the current user is a member OR an invitee
         .where('inviteeUids', arrayContains: user.uid) 
         
-        // --- ADD THESE TWO LINES TO MATCH THE COMPOSITE INDEX ORDER ---
-        .orderBy('classId') 
-        .orderBy('inviteeUids')
-        // -----------------------------------------------------------
+        // --- REMOVED INVALID ORDERBY LINES ---
+        // .orderBy('classId') 
+        // .orderBy('inviteeUids')
+        // -------------------------------------
         
-        .orderBy('createdAt', descending: true)
+        .orderBy('createdAt', descending: true) // This is the only sort you need
         .snapshots();
   }
 
-  // --- Group Joining Logic (UNCHANGED logic, but used by the new 'Accept Invite' action) ---
   Future<void> _joinGroup(String groupId, List<dynamic> memberUids) async {
+    // ... (This function is unchanged) ...
     if (memberUids.contains(user.uid)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('You are already a member.')),
@@ -241,11 +235,11 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
     }
   }
 
-  // --- NEW: Group Rejection Logic (Remove from inviteeUids) ---
   Future<void> _rejectGroup(String groupId) async {
+    // ... (This function is unchanged) ...
     try {
       await FirebaseFirestore.instance.collection('study_groups').doc(groupId).update({
-        'inviteeUids': FieldValue.arrayRemove([user.uid]), // Remove the user from the allowed list
+        'inviteeUids': FieldValue.arrayRemove([user.uid]), 
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -264,6 +258,7 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
 
   @override
   Widget build(BuildContext context) {
+    // ... (The entire build method is unchanged) ...
     final primaryColor = Theme.of(context).colorScheme.primary;
 
     return Scaffold(
@@ -278,13 +273,6 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
           }
 
           final groups = snapshot.data?.docs ?? [];
-          // Filter groups to only show if the user is a member or an invitee (already done in stream but kept for safety/future check)
-          // final visibleGroups = groups.where((doc) {
-          //   final data = doc.data() as Map<String, dynamic>;
-          //   final memberUids = data['memberUids'] as List<dynamic>? ?? [];
-          //   final inviteeUids = data['inviteeUids'] as List<dynamic>? ?? [];
-          //   return memberUids.contains(user.uid) || inviteeUids.contains(user.uid);
-          // }).toList();
           final visibleGroups = groups;
 
 
@@ -310,7 +298,6 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
               
               final isMember = memberUids.contains(user.uid);
               
-              // NEW: Check if the user is an invitee but NOT a member
               final inviteeUids = data['inviteeUids'] as List<dynamic>? ?? [];
               final isInvitedButNotMember = inviteeUids.contains(user.uid) && !isMember;
 
@@ -319,7 +306,6 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
               VoidCallback? onTapAction;
 
               if (isMember) {
-                // User is a member -> show chat icon and navigate to chat
                 trailingWidget = const Icon(Icons.chat_bubble_outline, color: Colors.green);
                 onTapAction = () {
                   Navigator.of(context).push(
@@ -333,7 +319,6 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
                   );
                 };
               } else if (isInvitedButNotMember) {
-                // User is invited but not a member -> show join/reject buttons
                 trailingWidget = Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -353,9 +338,8 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
                     ),
                   ],
                 );
-                onTapAction = null; // No direct tap action until accepted
+                onTapAction = null; 
               } else {
-                 // Should technically not happen if the stream is correct, but handles any "public" or uninvited/non-member view
                  trailingWidget = const Text('Invite Only', style: TextStyle(color: Colors.grey));
                  onTapAction = null;
               }
