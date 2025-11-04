@@ -1,4 +1,4 @@
-// lib/study_materials_view_page.dart - FINAL FIXED VERSION
+// lib/study_materials_view_page.dart - FINAL FIXED VERSION with Quiz Integration
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -7,10 +7,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'upload_material_page.dart'; 
 import 'create_assignment_page.dart'; 
 import 'assignment_detail_page.dart'; 
+import 'create_quiz_page.dart'; // NEW IMPORT
+import 'quiz_model.dart'; // NEW IMPORT
 
 // --- Data Models (All models defined here) ---
 
-// --- MODEL 1: Assignment (Moved here to fix circular dependency) ---
+// --- MODEL 1: Assignment (Unchanged) ---
 class Assignment {
   final String id;
   final String title;
@@ -77,7 +79,44 @@ class StudyMaterial {
   }
 }
 
-// --- MODEL 3: AssignmentItem (UPDATED with fileUrl/fileName) ---
+// --- NEW MODEL 3: QuizItem ---
+class QuizItem {
+  final String id;
+  final String title;
+  final int totalPoints;
+  final int durationMinutes; // New field
+  final Timestamp postedOn;
+  final String postedBy;
+  final String courseId;
+  final String type = 'quiz';
+
+  QuizItem({
+    required this.id,
+    required this.title,
+    required this.totalPoints,
+    required this.durationMinutes,
+    required this.postedOn,
+    required this.postedBy,
+    required this.courseId,
+  });
+
+  factory QuizItem.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>?;
+    if (data == null) throw Exception("Quiz data is null");
+    return QuizItem(
+      id: doc.id,
+      title: data['title'] ?? 'Untitled Quiz',
+      totalPoints: data['totalPoints'] ?? 0,
+      durationMinutes: data['durationMinutes'] ?? 0,
+      postedOn: data['postedOn'] ?? Timestamp.now(),
+      postedBy: data['postedBy'] ?? 'Instructor',
+      courseId: data['courseId'] ?? '',
+    );
+  }
+}
+
+
+// --- MODEL 4: AssignmentItem (UPDATED with 'type' field) ---
 class AssignmentItem {
   final String id;
   final String title;
@@ -86,9 +125,9 @@ class AssignmentItem {
   final Timestamp dueDate;
   final String postedBy;
   final String courseId;
-  final String? fileUrl;   // <-- UPDATED
-  final String? fileName;  // <-- UPDATED
-  final String type = 'assignment';
+  final String? fileUrl;   
+  final String? fileName;  
+  final String type = 'assignment'; // ADDED FIELD
 
   AssignmentItem({
     required this.id,
@@ -98,8 +137,8 @@ class AssignmentItem {
     required this.dueDate,
     required this.postedBy,
     required this.courseId,
-    this.fileUrl,  // <-- UPDATED
-    this.fileName, // <-- UPDATED
+    this.fileUrl, 
+    this.fileName, 
   });
 
   factory AssignmentItem.fromFirestore(DocumentSnapshot doc) {
@@ -113,8 +152,8 @@ class AssignmentItem {
       dueDate: data['dueDate'] ?? Timestamp.now(),
       postedBy: data['postedBy'] ?? 'Instructor',
       courseId: data['courseId'] ?? '',
-      fileUrl: data['fileUrl'] as String?,   // <-- UPDATED
-      fileName: data['fileName'] as String?, // <-- UPDATED
+      fileUrl: data['fileUrl'] as String?,   
+      fileName: data['fileName'] as String?, 
     );
   }
  
@@ -129,8 +168,8 @@ class AssignmentItem {
       dueDate: dueDate,
       postedBy: postedBy,
       courseId: courseId,
-      fileUrl: fileUrl,   // <-- UPDATED
-      fileName: fileName, // <-- UPDATED
+      fileUrl: fileUrl,   
+      fileName: fileName, 
     );
   }
 }
@@ -145,7 +184,6 @@ class StudyMaterialsViewPage extends StatelessWidget {
     required this.classId,
   });
 
-  // --- (All streams and functions are unchanged) ---
   Stream<List<AssignmentItem>> getAssignmentsStream(String courseId) {
     return FirebaseFirestore.instance
         .collection('assignments')
@@ -208,6 +246,18 @@ class StudyMaterialsViewPage extends StatelessWidget {
               },
             ),
             ListTile(
+              leading: const Icon(Icons.rate_review, color: Colors.purple), // NEW QUIZ OPTION
+              title: const Text('Create Quiz'), // NEW QUIZ OPTION
+              onTap: () {
+                Navigator.pop(context); 
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => CreateQuizPage(classId: classId),
+                  ),
+                );
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.cloud_upload, color: Colors.blue),
               title: const Text('Upload Study Material'),
               onTap: () {
@@ -250,7 +300,6 @@ class StudyMaterialsViewPage extends StatelessWidget {
  
   @override
   Widget build(BuildContext context) {
-    // --- (This entire build method is unchanged) ---
     final primaryColor = Theme.of(context).colorScheme.primary;
 
     return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
