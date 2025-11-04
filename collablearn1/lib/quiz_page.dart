@@ -1,4 +1,4 @@
-// lib/quiz_page.dart
+// lib/quiz_page.dart - MODIFIED FOR ANIMATION AND DYNAMIC UI
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -23,7 +23,7 @@ class QuizPage extends StatefulWidget {
   State<QuizPage> createState() => _QuizPageState();
 }
 
-class _QuizPageState extends State<QuizPage> {
+class _QuizPageState extends State<QuizPage> with SingleTickerProviderStateMixin {
   final _currentUser = FirebaseAuth.instance.currentUser!;
   bool _isLoading = true;
   bool _quizStarted = false;
@@ -35,16 +35,27 @@ class _QuizPageState extends State<QuizPage> {
   late int _secondsRemaining;
   Timer? _timer;
 
+  // Animation controllers for dynamic effects
+  late AnimationController _cardAnimationController;
+  final PageController _pageController = PageController();
+  int _currentPage = 0;
+
   @override
   void initState() {
     super.initState();
     _secondsRemaining = widget.durationMinutes * 60;
+    _cardAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
     _checkSubmissionStatus();
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _cardAnimationController.dispose();
+    _pageController.dispose();
     super.dispose();
   }
   
@@ -178,7 +189,7 @@ class _QuizPageState extends State<QuizPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Quiz submitted! Score: $score/$maxScore')),
         );
-        // Navigate back to dashboard (or a dedicated report page if implemented later)
+        // Navigate back to dashboard 
         Navigator.pop(context);
       }
     } catch (e) {
@@ -206,6 +217,13 @@ class _QuizPageState extends State<QuizPage> {
     return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 
+  // Helper to determine timer color
+  Color _getTimerColor(Color primaryColor) {
+    if (_secondsRemaining <= 60) return Colors.red;
+    if (_secondsRemaining <= 180) return Colors.orange;
+    return primaryColor;
+  }
+
   @override
   Widget build(BuildContext context) {
     final primaryColor = Theme.of(context).colorScheme.primary;
@@ -218,12 +236,7 @@ class _QuizPageState extends State<QuizPage> {
         automaticallyImplyLeading: !_quizStarted || _quizSubmitted,
         actions: _quizStarted && !_quizSubmitted
             ? [
-                Center(
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 16.0),
-                    child: Text(_formatTime(), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  ),
-                ),
+                _buildTimerDisplay(primaryColor),
               ]
             : [],
       ),
@@ -243,6 +256,37 @@ class _QuizPageState extends State<QuizPage> {
             )
           : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+    );
+  }
+
+  // Animated Timer Display in AppBar
+  Widget _buildTimerDisplay(Color primaryColor) {
+    final color = _getTimerColor(primaryColor);
+    return Padding(
+      padding: const EdgeInsets.only(right: 16.0),
+      child: Row(
+        children: [
+          Icon(Icons.timer, color: color, size: 20),
+          const SizedBox(width: 4),
+          // AnimatedSwitcher provides a smooth fade between time updates
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            transitionBuilder: (child, animation) {
+              return ScaleTransition(scale: animation, child: child);
+            },
+            child: Text(
+              _formatTime(),
+              // Use a Key to force the AnimatedSwitcher to recognize a change
+              key: ValueKey<int>(_secondsRemaining), 
+              style: TextStyle(
+                fontSize: 18, 
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -300,43 +344,186 @@ class _QuizPageState extends State<QuizPage> {
     );
   }
 
+  // Modified Quiz Taking View using PageView and Navigation Buttons
   Widget _buildQuizTakingView(Color primaryColor) {
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
-      itemCount: _questions.length,
-      itemBuilder: (context, index) {
-        final question = _questions[index];
-        return Card(
-          margin: const EdgeInsets.only(bottom: 20),
-          elevation: 4,
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Q${index + 1}. (${question.points} Points) ${question.questionText}',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-                const Divider(),
-                ...List.generate(question.options.length, (optionIndex) {
-                  return RadioListTile<int>(
-                    title: Text(question.options[optionIndex]),
-                    value: optionIndex,
-                    groupValue: _studentAnswers[question.id],
-                    onChanged: (int? value) {
-                      setState(() {
-                        _studentAnswers[question.id] = value;
-                      });
-                    },
-                    activeColor: primaryColor,
+    return Column(
+      children: [
+        // Question Navigation Tracker
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(_questions.length, (index) {
+              final isAnswered = _studentAnswers[_questions[index].id] != null;
+              final isCurrent = index == _currentPage;
+              
+              return GestureDetector(
+                onTap: () {
+                  _pageController.animateToPage(
+                    index, 
+                    duration: const Duration(milliseconds: 400), 
+                    curve: Curves.easeInOut
                   );
-                }),
-              ],
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  width: 35,
+                  height: 35,
+                  decoration: BoxDecoration(
+                    color: isCurrent 
+                        ? primaryColor 
+                        : (isAnswered ? Colors.green.shade400 : Colors.grey.shade300),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isCurrent ? primaryColor : Colors.transparent,
+                      width: 2,
+                    ),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    '${index + 1}',
+                    style: TextStyle(
+                      color: isCurrent || isAnswered ? Colors.white : Colors.black87,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ),
+        ),
+        
+        // PageView for Questions
+        Expanded(
+          child: PageView.builder(
+            controller: _pageController,
+            itemCount: _questions.length,
+            onPageChanged: (index) {
+              setState(() {
+                _currentPage = index;
+                _cardAnimationController.forward(from: 0.0); // Reset and start animation
+              });
+            },
+            itemBuilder: (context, index) {
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                child: FadeTransition(
+                  opacity: Tween<double>(begin: 0.5, end: 1.0).animate(_cardAnimationController),
+                  child: ScaleTransition(
+                    scale: Tween<double>(begin: 0.98, end: 1.0).animate(_cardAnimationController),
+                    child: _buildQuestionCard(index, primaryColor),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        
+        // Bottom Navigation
+        _buildPageNavigationControls(primaryColor),
+        const SizedBox(height: 80), // Space for FAB
+      ],
+    );
+  }
+
+  Widget _buildQuestionCard(int index, Color primaryColor) {
+    final question = _questions[index];
+    return Card(
+      elevation: 6,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      child: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Q${index + 1} of ${_questions.length}. (${question.points} Points)',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: primaryColor),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              question.questionText,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            ),
+            const Divider(height: 25),
+            
+            // Options
+            ...List.generate(question.options.length, (optionIndex) {
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                margin: const EdgeInsets.symmetric(vertical: 4),
+                decoration: BoxDecoration(
+                  color: _studentAnswers[question.id] == optionIndex ? primaryColor.withOpacity(0.1) : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: _studentAnswers[question.id] == optionIndex ? primaryColor : Colors.grey.shade300,
+                  ),
+                ),
+                child: RadioListTile<int>(
+                  title: Text(question.options[optionIndex], style: TextStyle(color: _studentAnswers[question.id] == optionIndex ? primaryColor : null)),
+                  value: optionIndex,
+                  groupValue: _studentAnswers[question.id],
+                  onChanged: (int? value) {
+                    setState(() {
+                      _studentAnswers[question.id] = value;
+                    });
+                  },
+                  activeColor: primaryColor,
+                ),
+              );
+            }),
+            const SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPageNavigationControls(Color primaryColor) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          // Previous Button
+          ElevatedButton.icon(
+            onPressed: _currentPage > 0 
+                ? () {
+                    _pageController.previousPage(
+                      duration: const Duration(milliseconds: 400), 
+                      curve: Curves.easeInOut
+                    );
+                  }
+                : null,
+            icon: const Icon(Icons.arrow_back),
+            label: const Text('Previous'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: primaryColor.withOpacity(0.1),
+              foregroundColor: primaryColor,
+              elevation: 0,
             ),
           ),
-        );
-      },
+          
+          // Next Button
+          ElevatedButton.icon(
+            onPressed: _currentPage < _questions.length - 1
+                ? () {
+                    _pageController.nextPage(
+                      duration: const Duration(milliseconds: 400), 
+                      curve: Curves.easeInOut
+                    );
+                  }
+                : null,
+            icon: const Icon(Icons.arrow_forward),
+            label: const Text('Next'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: primaryColor,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
