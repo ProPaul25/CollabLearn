@@ -494,7 +494,7 @@ class _LandingPageState extends State<LandingPage> {
         const Spacer(),
         Image.asset(
           'assets/logo.png',
-          height: 60,
+          height: 100,
         ),
         const SizedBox(height: 40),
       ],

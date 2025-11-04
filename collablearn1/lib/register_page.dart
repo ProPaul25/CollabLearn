@@ -1,4 +1,4 @@
-// lib/register_page.dart
+// lib/register_page.dart - UPDATED with Email Domain Restriction
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -14,6 +14,10 @@ class RegisterPage extends StatefulWidget {
 }
 
 class _RegisterPageState extends State<RegisterPage> {
+  // --- DOMAIN RESTRICTION ---
+  static const String _ALLOWED_DOMAIN = '@iitrpr.ac.in';
+  // --------------------------
+  
   final _formKey = GlobalKey<FormState>();
   UserRole? _selectedRole = UserRole.student;
 
@@ -46,11 +50,25 @@ class _RegisterPageState extends State<RegisterPage> {
       return;
     }
     setState(() => _isLoading = true);
+    
+    final email = _emailController.text.trim();
+    
+    // --- FINAL DOMAIN CHECK (Defense in Depth) ---
+    if (!email.endsWith(_ALLOWED_DOMAIN)) {
+        if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Registration restricted to @iitrpr.ac.in domain.'), backgroundColor: Colors.red),
+            );
+        }
+        setState(() => _isLoading = false);
+        return;
+    }
+    // ---------------------------------------------
 
     try {
       // 1. Authenticate user with Firebase Auth
       final userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: _emailController.text.trim(),
+        email: email,
         password: _passwordController.text.trim(),
       );
 
@@ -64,7 +82,7 @@ class _RegisterPageState extends State<RegisterPage> {
         'firstName': _firstNameController.text.trim(),
         'lastName': _lastNameController.text.trim(),
         'role': _selectedRole.toString().split('.').last, // 'student' or 'instructor'
-        'email': _emailController.text.trim(),
+        'email': email,
         'createdAt': FieldValue.serverTimestamp(),
         'enrolledClasses': [], // Initialize enrolled classes array
         'profileImageBase64': null, // Initialize profile image
@@ -92,7 +110,7 @@ class _RegisterPageState extends State<RegisterPage> {
         // The lookup doc links the identifier (e.g., Entry No) to the user's email and UID.
         batch.set(lookupDocRef, {
           'uid': user.uid, 
-          'email': _emailController.text.trim()
+          'email': email
         });
       }
 
@@ -178,11 +196,23 @@ class _RegisterPageState extends State<RegisterPage> {
                           ],
                         ),
                         const SizedBox(height: 20),
-                        _buildTextField(controller: _emailController, labelText: 'Email Address', hintText: 'Email', keyboardType: TextInputType.emailAddress, validator: (value) {
-                          if (value == null || value.isEmpty) return 'Email is required';
-                          if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value)) return 'Enter a valid email';
-                          return null;
-                        }),
+                        _buildTextField(
+                          controller: _emailController, 
+                          labelText: 'Email Address', 
+                          hintText: 'Email', 
+                          keyboardType: TextInputType.emailAddress, 
+                          validator: (value) {
+                            if (value == null || value.isEmpty) return 'Email is required';
+                            if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value)) return 'Enter a valid email';
+                            
+                            // --- DOMAIN CHECK IN VALIDATOR ---
+                            if (!value.endsWith(_ALLOWED_DOMAIN)) {
+                              return 'Must use an $_ALLOWED_DOMAIN email address.';
+                            }
+                            // ---------------------------------
+                            return null;
+                          }
+                        ),
                         const SizedBox(height: 20),
                         if (_selectedRole == UserRole.student)
                           _buildTextField(controller: _entryNoController, labelText: 'Entry No', hintText: 'e.g., 2025CSM1016')
