@@ -6,6 +6,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 // NOTE: Ensure these two files exist and contain the navigation logic
 import 'add_co_instructor_page.dart'; 
 import 'add_student_page.dart'; 
+// NEW IMPORT
+import 'instructor_student_report_page.dart'; 
 
 class PeopleViewPage extends StatefulWidget {
   final String classId;
@@ -127,6 +129,7 @@ class _PeopleViewPageState extends State<PeopleViewPage> {
 
                 final String instructorName = _getUserName(instructor);
                 final String instructorEmail = instructor['email']?.toString() ?? 'N/A';
+                final String instructorUid = instructor['uid']?.toString() ?? '';
 
                 students.sort((a, b) => _getUserName(a).compareTo(_getUserName(b)));
 
@@ -139,7 +142,8 @@ class _PeopleViewPageState extends State<PeopleViewPage> {
                       style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: primaryColor),
                     ),
                     const Divider(),
-                    _buildUserTile(context, instructorName, instructorEmail, Icons.school),
+                    // Pass null onTap for the instructor himself
+                    _buildUserTile(context, instructorName, instructorEmail, instructorUid, true, null),
                     
                     // 1. ADD CO-TEACHER BUTTON (Bottom of Teacher's Section)
                     if (isInstructor)
@@ -173,8 +177,28 @@ class _PeopleViewPageState extends State<PeopleViewPage> {
                     ...students.map((student) {
                       final String studentName = _getUserName(student);
                       final String studentEmail = student['email']?.toString() ?? 'N/A';
-                      
-                      return _buildUserTile(context, studentName, studentEmail, Icons.person);
+                      final String studentUid = student['uid']?.toString() ?? '';
+
+                      return _buildUserTile(
+                        context, 
+                        studentName, 
+                        studentEmail, 
+                        studentUid, 
+                        false, // isInstructor flag: false for students
+                        isInstructor // Only allow navigation if the current user is the course instructor
+                          ? () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) => InstructorStudentReportPage(
+                                    classId: widget.classId,
+                                    studentId: studentUid,
+                                    studentName: studentName,
+                                  ),
+                                ),
+                              );
+                            } 
+                          : null,
+                      );
                     }).toList(),
 
                     // 2. ADD STUDENT BUTTON (Bottom of Student's Section)
@@ -204,19 +228,27 @@ class _PeopleViewPageState extends State<PeopleViewPage> {
     );
   }
   
-  Widget _buildUserTile(BuildContext context, String name, String email, IconData icon) {
+  // MODIFIED to accept userId and onTap action
+  Widget _buildUserTile(BuildContext context, String name, String email, String userId, bool isInstructor, VoidCallback? onTap) {
+    final primaryColor = Theme.of(context).colorScheme.primary;
+    final icon = isInstructor ? Icons.school : Icons.person;
+
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8),
       elevation: 1,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       child: ListTile(
         leading: CircleAvatar(
-          backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-          child: Icon(icon, color: Theme.of(context).colorScheme.primary),
+          backgroundColor: primaryColor.withOpacity(0.1),
+          child: Icon(icon, color: primaryColor),
         ),
         title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
         subtitle: Text(email),
-        onTap: () {},
+        // Show an arrow if the tile is clickable, otherwise show nothing or the star icon for the main instructor.
+        trailing: onTap != null 
+            ? Icon(Icons.arrow_forward_ios, size: 16, color: primaryColor)
+            : (isInstructor ? const Icon(Icons.star, color: Colors.amber) : null), 
+        onTap: onTap,
       ),
     );
   }
