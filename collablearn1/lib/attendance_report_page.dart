@@ -35,7 +35,7 @@ class AttendanceReportPage extends StatelessWidget {
     
     // Create a Set of student UIDs who ARE present
     final presentStudentIds = recordsSnapshot.docs
-        .map((doc) => (doc.data() as Map<String, dynamic>)['studentId'] as String)
+        .map((doc) => (doc.data())['studentId'] as String)
         .toSet();
 
     // 3. Fetch user data (name and entryNo) for all enrolled students

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'study_group_chat_page.dart';
+// NEW IMPORT
 
 class StudyGroupsViewPage extends StatefulWidget {
   final String classId;
@@ -58,6 +59,9 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
 
       if (allUids.isEmpty) return;
 
+      // Note: This relies on the system handling the Firestore 'whereIn' limit of 10.
+      // If the list is larger than 10, this query will fail or only return 10 results.
+      // The robust solution (iterating/batching) is in group_settings_page.dart.
       final usersSnapshot = await FirebaseFirestore.instance
           .collection('users')
           .where(FieldPath.documentId, whereIn: allUids.toList())
@@ -84,7 +88,7 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
   }
   
   Future<void> _showCreateGroupDialog() async {
-    // ... (This function is unchanged) ...
+    // ... (Dialog UI is unchanged) ...
     final _nameController = TextEditingController();
     final _descriptionController = TextEditingController();
     final _formKey = GlobalKey<FormState>();
@@ -169,7 +173,6 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
   }
 
   Future<void> _createGroup(String name, String description, List<String> inviteeUids) async {
-    // ... (This function is unchanged) ...
     try {
       final allInviteeUids = {...inviteeUids, user.uid}.toList();
 
@@ -177,7 +180,7 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
         'groupName': name,
         'description': description,
         'classId': widget.classId,
-        'createdBy': user.uid,
+        'createdBy': user.uid, // NEW: Store creator's UID
         'creatorName': _currentUserName,
         'memberUids': [user.uid], 
         'inviteeUids': allInviteeUids, 
@@ -198,13 +201,7 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
         .collection('study_groups')
         .where('classId', isEqualTo: widget.classId)
         .where('inviteeUids', arrayContains: user.uid) 
-        
-        // --- REMOVED INVALID ORDERBY LINES ---
-        // .orderBy('classId') 
-        // .orderBy('inviteeUids')
-        // -------------------------------------
-        
-        .orderBy('createdAt', descending: true) // This is the only sort you need
+        .orderBy('createdAt', descending: true) 
         .snapshots();
   }
 
@@ -258,7 +255,7 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
 
   @override
   Widget build(BuildContext context) {
-    // ... (The entire build method is unchanged) ...
+    // ... (The entire build method is unchanged except for logic inside ListTile onTap) ...
     final primaryColor = Theme.of(context).colorScheme.primary;
 
     return Scaffold(
@@ -295,6 +292,7 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
               final groupId = groupDoc.id;
               final groupName = data['groupName'] ?? 'Unnamed Group';
               final memberUids = data['memberUids'] as List<dynamic>? ?? [];
+              final creatorId = data['createdBy'] as String? ?? ''; // NEW: Get Creator ID
               
               final isMember = memberUids.contains(user.uid);
               
@@ -306,7 +304,7 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
               VoidCallback? onTapAction;
 
               if (isMember) {
-                trailingWidget = const Icon(Icons.chat_bubble_outline, color: Colors.green);
+                trailingWidget = creatorId == user.uid ? const Icon(Icons.settings, color: Colors.green) : const Icon(Icons.chat_bubble_outline, color: Colors.green);
                 onTapAction = () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
@@ -316,7 +314,7 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
                         currentUserName: _currentUserName,
                       ),
                     ),
-                  );
+                  ).then((_) => setState(() {})); // Reloads group view when returning
                 };
               } else if (isInvitedButNotMember) {
                 trailingWidget = Row(

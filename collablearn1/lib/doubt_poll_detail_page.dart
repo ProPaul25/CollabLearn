@@ -45,7 +45,7 @@ class _DoubtPollDetailPageState extends State<DoubtPollDetailPage> {
     super.initState();
     _loadCurrentUserData();
     if (_currentUser != null) {
-      _isOriginalPoster = widget.initialPollData['postedById'] == _currentUser!.uid;
+      _isOriginalPoster = widget.initialPollData['postedById'] == _currentUser.uid;
     }
   }
 
@@ -53,7 +53,7 @@ class _DoubtPollDetailPageState extends State<DoubtPollDetailPage> {
     // ... (This function is unchanged)
     if (_currentUser == null) return;
     try {
-      final userDoc = await FirebaseFirestore.instance.collection('users').doc(_currentUser!.uid).get();
+      final userDoc = await FirebaseFirestore.instance.collection('users').doc(_currentUser.uid).get();
       final classDoc = await FirebaseFirestore.instance.collection('classes').doc(widget.classId).get();
       
       if (mounted) {
@@ -67,7 +67,7 @@ class _DoubtPollDetailPageState extends State<DoubtPollDetailPage> {
           }
           if (classDoc.exists) {
             _instructorId = classDoc.data()?['instructorId'] ?? '';
-            _isTeacher = _currentUser!.uid == _instructorId;
+            _isTeacher = _currentUser.uid == _instructorId;
           }
         });
       }
@@ -127,7 +127,7 @@ class _DoubtPollDetailPageState extends State<DoubtPollDetailPage> {
       batch.set(repliesRef, {
         'pollId': widget.pollId,
         'text': replyText,
-        'postedById': _currentUser!.uid,
+        'postedById': _currentUser.uid,
         'postedBy': _currentUserName,
         'timestamp': newTimestamp,
         'upvotes': [], 

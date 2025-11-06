@@ -7,6 +7,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:cloudinary_public/cloudinary_public.dart'; 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:url_launcher/url_launcher.dart';
+import 'group_settings_page.dart'; // NEW IMPORT
 
 // --- CLOUDINARY DEPENDENCY (Reused from assignment_detail_page.dart) ---
 const String _CLOUD_NAME = 'dc51dx2da'; 
@@ -38,14 +39,33 @@ class _StudyGroupChatPageState extends State<StudyGroupChatPage> {
   // New state for upload progress
   bool _isUploading = false;
   double _uploadProgress = 0;
+  
+  // NEW: State for creator ID
+  String _creatorId = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchGroupDetails();
+  }
 
   @override
   void dispose() {
     _messageController.dispose();
     super.dispose();
   }
+  
+  // NEW: Fetch group creator ID
+  Future<void> _fetchGroupDetails() async {
+    final groupDoc = await FirebaseFirestore.instance.collection('study_groups').doc(widget.groupId).get();
+    if (groupDoc.exists && mounted) {
+      setState(() {
+        _creatorId = groupDoc.data()?['createdBy'] ?? '';
+      });
+    }
+  }
 
-  // --- Send Message Logic (UPDATED for text) ---
+  // --- Send Message Logic (Unchanged) ---
   Future<void> _sendMessage() async {
     if (_messageController.text.trim().isEmpty || _isUploading) return;
 
@@ -58,7 +78,7 @@ class _StudyGroupChatPageState extends State<StudyGroupChatPage> {
           .doc(widget.groupId)
           .collection('chat') 
           .add({
-        'type': 'text', // NEW: Message type
+        'type': 'text', 
         'text': messageText,
         'senderId': _currentUser.uid,
         'senderName': widget.currentUserName,
@@ -69,7 +89,7 @@ class _StudyGroupChatPageState extends State<StudyGroupChatPage> {
     }
   }
 
-  // --- NEW: File Picking and Sending Logic ---
+  // --- File Picking and Sending Logic (Unchanged) ---
   Future<void> _pickAndSendFile() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
@@ -127,7 +147,7 @@ class _StudyGroupChatPageState extends State<StudyGroupChatPage> {
           .doc(widget.groupId)
           .collection('chat') 
           .add({
-        'type': (resourceType == CloudinaryResourceType.Image) ? 'image' : 'file', // NEW: Message type
+        'type': (resourceType == CloudinaryResourceType.Image) ? 'image' : 'file', 
         'url': downloadUrl,
         'fileName': pickedFile.name,
         'senderId': _currentUser.uid,
@@ -152,7 +172,7 @@ class _StudyGroupChatPageState extends State<StudyGroupChatPage> {
     }
   }
 
-  // --- NEW: URL Launcher Helper ---
+  // --- URL Launcher Helper (Unchanged) ---
   Future<void> _launchUrl(String url) async {
     if (url.isEmpty) return;
     final uri = Uri.parse(url);
@@ -165,75 +185,119 @@ class _StudyGroupChatPageState extends State<StudyGroupChatPage> {
   @override
   Widget build(BuildContext context) {
     final primaryColor = Theme.of(context).colorScheme.primary;
+    final isGroupAdmin = _creatorId == _currentUser.uid;
+    
+    // We use a StreamBuilder here to get real-time updates on group name/creator ID
+    // while the user is in chat, which is critical if the name is changed from settings.
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance.collection('study_groups').doc(widget.groupId).snapshots(),
+      builder: (context, snapshot) {
+        String currentGroupName = widget.groupName;
+        String classId = '';
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.groupName),
-        backgroundColor: primaryColor,
-        foregroundColor: Colors.white,
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            // --- Real-time Chat Stream ---
-            child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('study_groups')
-                  .doc(widget.groupId)
-                  .collection('chat')
-                  .orderBy('timestamp', descending: true)
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-
-                final messages = snapshot.data!.docs.reversed.toList();
-
-                return ListView.builder(
-                  padding: const EdgeInsets.all(12),
-                  reverse: false,
-                  itemCount: messages.length,
-                  itemBuilder: (context, index) {
-                    final message = messages[index].data() as Map<String, dynamic>;
-                    final isMe = message['senderId'] == _currentUser.uid;
-                    final type = message['type'] ?? 'text'; // Get message type
-
-                    if (type == 'text') {
-                      return _buildMessageBubble(message, isMe, primaryColor);
-                    } else {
-                      return _buildMediaMessage(message, isMe, primaryColor); // NEW: Handle media messages
-                    }
+        if (snapshot.hasData && snapshot.data!.exists) {
+            final data = snapshot.data!.data() as Map<String, dynamic>;
+            currentGroupName = data['groupName'] ?? widget.groupName;
+            classId = data['classId'] ?? '';
+            // Update creator ID in state if it changes (though it shouldn't)
+            if (data['createdBy'] != _creatorId) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                  setState(() {
+                      _creatorId = data['createdBy'];
+                  });
+              });
+            }
+        }
+        
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(currentGroupName),
+            backgroundColor: primaryColor,
+            foregroundColor: Colors.white,
+            actions: [
+              if (isGroupAdmin && classId.isNotEmpty)
+                IconButton(
+                  icon: const Icon(Icons.settings),
+                  tooltip: 'Group Settings',
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => GroupSettingsPage(
+                          groupId: widget.groupId,
+                          classId: classId,
+                          initialGroupName: currentGroupName,
+                        ),
+                      ),
+                    );
                   },
-                );
-              },
-            ),
+                ),
+            ],
           ),
-          
-          // NEW: Upload Progress Indicator
-          if (_isUploading)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-              child: Column(
-                children: [
-                  LinearProgressIndicator(value: _uploadProgress.clamp(0.0, 1.0), color: primaryColor),
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4.0),
-                    child: Text('Uploading File... (${(_uploadProgress * 100).toStringAsFixed(0)}%)', style: TextStyle(fontSize: 12, color: primaryColor)),
-                  ),
-                ],
+          body: Column(
+            children: [
+              Expanded(
+                // --- Real-time Chat Stream ---
+                child: StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('study_groups')
+                      .doc(widget.groupId)
+                      .collection('chat')
+                      .orderBy('timestamp', descending: true)
+                      .snapshots(),
+                  builder: (context, chatSnapshot) {
+                    if (!chatSnapshot.hasData) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+
+                    final messages = chatSnapshot.data!.docs.reversed.toList();
+
+                    return ListView.builder(
+                      padding: const EdgeInsets.all(12),
+                      reverse: false,
+                      itemCount: messages.length,
+                      itemBuilder: (context, index) {
+                        final message = messages[index].data() as Map<String, dynamic>;
+                        final isMe = message['senderId'] == _currentUser.uid;
+                        final type = message['type'] ?? 'text'; 
+
+                        if (type == 'text') {
+                          return _buildMessageBubble(message, isMe, primaryColor);
+                        } else {
+                          return _buildMediaMessage(message, isMe, primaryColor); 
+                        }
+                      },
+                    );
+                  },
+                ),
               ),
-            ),
-            
-          // --- Message Input Area ---
-          _buildChatInput(primaryColor),
-        ],
-      ),
+              
+              // Upload Progress Indicator
+              if (_isUploading)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                  child: Column(
+                    children: [
+                      LinearProgressIndicator(value: _uploadProgress.clamp(0.0, 1.0), color: primaryColor),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4.0),
+                        child: Text('Uploading File... (${(_uploadProgress * 100).toStringAsFixed(0)}%)', style: TextStyle(fontSize: 12, color: primaryColor)),
+                      ),
+                    ],
+                  ),
+                ),
+                
+              // Message Input Area
+              _buildChatInput(primaryColor),
+            ],
+          ),
+        );
+      }
     );
   }
 
-  // --- NEW: Media Message Bubble Widget ---
+  // --- Media Message Bubble Widget (Unchanged) ---
   Widget _buildMediaMessage(Map<String, dynamic> message, bool isMe, Color primaryColor) {
+    // ... (logic unchanged) ...
     final isImage = message['type'] == 'image';
     final url = message['url'] as String? ?? '';
     final fileName = message['fileName'] as String? ?? 'File';
@@ -326,7 +390,9 @@ class _StudyGroupChatPageState extends State<StudyGroupChatPage> {
     );
   }
 
+  // --- Message Bubble Widget (Unchanged) ---
   Widget _buildMessageBubble(Map<String, dynamic> message, bool isMe, Color primaryColor) {
+    // ... (logic unchanged) ...
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -388,7 +454,7 @@ class _StudyGroupChatPageState extends State<StudyGroupChatPage> {
       ),
       child: Row(
         children: [
-          // NEW: File/Image Pick Button
+          // File/Image Pick Button
           IconButton(
             icon: Icon(Icons.attach_file, color: primaryColor),
             onPressed: _isUploading ? null : _pickAndSendFile,

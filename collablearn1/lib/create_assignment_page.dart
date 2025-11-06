@@ -6,7 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart'; // <-- NEW IMPORT
 import 'package:flutter/foundation.dart' show kIsWeb; // <-- NEW IMPORT
-import 'dart:typed_data'; // <-- NEW IMPORT
+// <-- NEW IMPORT
 import 'package:cloudinary_public/cloudinary_public.dart'; // <-- NEW IMPORT
 
 // --- NEW: CLOUDINARY INSTANCE ---

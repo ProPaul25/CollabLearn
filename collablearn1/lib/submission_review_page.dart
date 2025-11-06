@@ -2,7 +2,6 @@
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'student_submission_detail.dart'; 
 import 'study_materials_view_page.dart'; // This import now works correctly
 
