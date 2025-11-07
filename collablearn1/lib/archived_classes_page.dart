@@ -119,8 +119,17 @@ class _ArchivedClassesPageState extends State<ArchivedClassesPage> {
                     onPressed: () => _unarchiveClass(classId, className),
                   ),
                   onTap: () {
-                    // Optional: You could allow the instructor to view the dashboard 
-                    // of an archived class, but for now, we focus on unarchiving.
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => CourseDashboardPage(
+                          classId: classId,
+                          className: className,
+                          classCode: classCode,
+                        ),
+                      ),
+                    ).then((_) {
+                      setState(() {});
+                    });
                   },
                 ),
               );
