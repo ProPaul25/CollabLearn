@@ -46,7 +46,6 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
   }
 
   Future<void> _loadClassRoster() async {
-    // ... (This function is unchanged) ...
     try {
       final classDoc = await FirebaseFirestore.instance.collection('classes').doc(widget.classId).get();
       final studentIds = List<String>.from(classDoc.data()?['studentIds'] ?? []);
@@ -60,8 +59,6 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
       if (allUids.isEmpty) return;
 
       // Note: This relies on the system handling the Firestore 'whereIn' limit of 10.
-      // If the list is larger than 10, this query will fail or only return 10 results.
-      // The robust solution (iterating/batching) is in group_settings_page.dart.
       final usersSnapshot = await FirebaseFirestore.instance
           .collection('users')
           .where(FieldPath.documentId, whereIn: allUids.toList())
@@ -73,7 +70,8 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
         return {
           'uid': doc.id,
           'name': name.isEmpty ? (data['email'] ?? 'User') : name,
-          'isInstructor': doc.id == instructorId,
+          // FIX: Ensure 'isInstructor' is explicitly set to a boolean
+          'isInstructor': doc.id == instructorId, 
         };
       }).where((u) => u['uid'] != user.uid).toList(); 
 
@@ -88,7 +86,6 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
   }
   
   Future<void> _showCreateGroupDialog() async {
-    // ... (Dialog UI is unchanged) ...
     final _nameController = TextEditingController();
     final _descriptionController = TextEditingController();
     final _formKey = GlobalKey<FormState>();
@@ -129,12 +126,13 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
                           final isSelected = _selectedUids.contains(member['uid']);
                           return CheckboxListTile(
                             title: Text(member['name']),
-                            subtitle: Text(member['isInstructor'] ? 'Instructor' : 'Student'),
+                            // The isInstructor field is now guaranteed to be a boolean
+                            subtitle: Text(member['isInstructor'] == true ? 'Instructor' : 'Student'),
                             value: isSelected,
                             onChanged: (bool? value) {
                               setDialogState(() {
                                 if (value == true) {
-                                  _selectedUids.add(member['uid']);
+                                  _selectedUids.add(member['uid'] as String);
                                 } else {
                                   _selectedUids.remove(member['uid']);
                                 }
@@ -174,16 +172,20 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
 
   Future<void> _createGroup(String name, String description, List<String> inviteeUids) async {
     try {
-      final allInviteeUids = {...inviteeUids, user.uid}.toList();
+      // 1. Members list must ONLY contain the creator initially (as required by security rules)
+      final initialMemberUids = [user.uid]; 
+      
+      // 2. Invitees list contains everyone: the creator and all others invited
+      final allInviteeUids = {...inviteeUids, user.uid}.toList(); 
 
       await FirebaseFirestore.instance.collection('study_groups').add({
         'groupName': name,
         'description': description,
         'classId': widget.classId,
-        'createdBy': user.uid, // NEW: Store creator's UID
+        'createdBy': user.uid, // Store creator's UID
         'creatorName': _currentUserName,
-        'memberUids': [user.uid], 
-        'inviteeUids': allInviteeUids, 
+        'memberUids': initialMemberUids, // FIX: Only the creator is an initial member
+        'inviteeUids': allInviteeUids,   
         'createdAt': FieldValue.serverTimestamp(),
       });
     } catch (e) {
@@ -200,13 +202,14 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
     return FirebaseFirestore.instance
         .collection('study_groups')
         .where('classId', isEqualTo: widget.classId)
-        .where('inviteeUids', arrayContains: user.uid) 
+        // FIX: Changed 'inviteeUids' to 'memberUids' to ensure groups 
+        // that the user has joined (or was added to) are visible.
+        .where('memberUids', arrayContains: user.uid) 
         .orderBy('createdAt', descending: true) 
         .snapshots();
   }
 
   Future<void> _joinGroup(String groupId, List<dynamic> memberUids) async {
-    // ... (This function is unchanged) ...
     if (memberUids.contains(user.uid)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('You are already a member.')),
@@ -217,6 +220,7 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
     try {
       await FirebaseFirestore.instance.collection('study_groups').doc(groupId).update({
         'memberUids': FieldValue.arrayUnion([user.uid]),
+        'inviteeUids': FieldValue.arrayRemove([user.uid]), // Automatically reject/remove self from invitees
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -233,7 +237,6 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
   }
 
   Future<void> _rejectGroup(String groupId) async {
-    // ... (This function is unchanged) ...
     try {
       await FirebaseFirestore.instance.collection('study_groups').doc(groupId).update({
         'inviteeUids': FieldValue.arrayRemove([user.uid]), 
@@ -245,6 +248,7 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
       }
     } catch (e) {
       if (mounted) {
+        // This is where the permission error was showing
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to reject invitation: $e'), backgroundColor: Colors.red),
         );
@@ -255,7 +259,6 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
 
   @override
   Widget build(BuildContext context) {
-    // ... (The entire build method is unchanged except for logic inside ListTile onTap) ...
     final primaryColor = Theme.of(context).colorScheme.primary;
 
     return Scaffold(
@@ -292,7 +295,7 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
               final groupId = groupDoc.id;
               final groupName = data['groupName'] ?? 'Unnamed Group';
               final memberUids = data['memberUids'] as List<dynamic>? ?? [];
-              final creatorId = data['createdBy'] as String? ?? ''; // NEW: Get Creator ID
+              final creatorId = data['createdBy'] as String? ?? ''; // Get Creator ID
               
               final isMember = memberUids.contains(user.uid);
               
