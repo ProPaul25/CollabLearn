@@ -1,15 +1,12 @@
-// lib/announcement_detail_page.dart - MODIFIED FOR EDIT/DELETE UI
+// lib/announcement_detail_page.dart - FIXED DELETE LOGIC
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart'; // NEW IMPORT
+import 'package:firebase_auth/firebase_auth.dart';
 import 'stream_page.dart'; // Import to use the Announcement model
-import 'create_announcement_page.dart'; // NEW IMPORT
+import 'create_announcement_page.dart';
 
-// Change to StatefulWidget
 class AnnouncementDetailPage extends StatefulWidget {
-  // NOTE: If you need to refresh, the final field may cause issues. 
-  // We'll keep it final but re-fetch data on edit success in the state class.
   final Announcement announcement; 
 
   const AnnouncementDetailPage({
@@ -22,7 +19,6 @@ class AnnouncementDetailPage extends StatefulWidget {
 }
 
 class _AnnouncementDetailPageState extends State<AnnouncementDetailPage> {
-  // Use a mutable variable to hold the announcement data for refreshing
   late Announcement _currentAnnouncement;
 
   @override
@@ -31,30 +27,29 @@ class _AnnouncementDetailPageState extends State<AnnouncementDetailPage> {
     _currentAnnouncement = widget.announcement;
   }
 
-  // Helper function to format the timestamp
   String _formatTimestamp(Timestamp timestamp) {
     return '${timestamp.toDate().day}/${timestamp.toDate().month}/${timestamp.toDate().year} at ${timestamp.toDate().hour}:${timestamp.toDate().minute.toString().padLeft(2, '0')}';
   }
 
-  // NEW: Check if the current user is the poster
   bool get _isOriginalPoster {
     final currentUser = FirebaseAuth.instance.currentUser;
     return currentUser != null && currentUser.uid == _currentAnnouncement.postedById;
   }
 
-  // NEW: Delete Confirmation Dialog and Logic
+  // FIXED: Delete both announcement and its feed entry
   Future<void> _deleteAnnouncement() async {
-  debugPrint('Attempting to delete announcement with ID: "${_currentAnnouncement.id}"');
-  debugPrint('ID length: ${_currentAnnouncement.id.length}');
-  if (_currentAnnouncement.id.isEmpty) {
-    // Show an error or simply stop the operation
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error: Announcement ID is missing.')),
-      );
+    debugPrint('Attempting to delete announcement with ID: "${_currentAnnouncement.id}"');
+    debugPrint('ID length: ${_currentAnnouncement.id.length}');
+    
+    if (_currentAnnouncement.id.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error: Announcement ID is missing.')),
+        );
+      }
+      return;
     }
-    return;
-  }
+
     final bool confirm = await showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -76,10 +71,32 @@ class _AnnouncementDetailPageState extends State<AnnouncementDetailPage> {
 
     if (confirm) {
       try {
-        await FirebaseFirestore.instance
+        // FIXED: Delete BOTH the announcement and its feed entry
+        final batch = FirebaseFirestore.instance.batch();
+        
+        // 1. Delete the announcement document
+        final announcementRef = FirebaseFirestore.instance
             .collection('announcements')
-            .doc(_currentAnnouncement.id)
-            .delete();
+            .doc(_currentAnnouncement.id);
+        batch.delete(announcementRef);
+        
+        // 2. Find and delete the corresponding class_feed entry
+        final feedQuery = await FirebaseFirestore.instance
+            .collection('class_feed')
+            .where('announcementId', isEqualTo: _currentAnnouncement.id)
+            .where('type', isEqualTo: 'announcement')
+            .limit(1)
+            .get();
+        
+        if (feedQuery.docs.isNotEmpty) {
+          batch.delete(feedQuery.docs.first.reference);
+          debugPrint('Found and will delete feed entry: ${feedQuery.docs.first.id}');
+        } else {
+          debugPrint('No feed entry found for announcement ${_currentAnnouncement.id}');
+        }
+        
+        // Execute the batch delete
+        await batch.commit();
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -89,6 +106,7 @@ class _AnnouncementDetailPageState extends State<AnnouncementDetailPage> {
           Navigator.of(context).pop(true); 
         }
       } catch (e) {
+        debugPrint('Error deleting announcement: $e');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Failed to delete announcement: $e')),
@@ -98,17 +116,15 @@ class _AnnouncementDetailPageState extends State<AnnouncementDetailPage> {
     }
   }
 
-  // NEW: Function to navigate to Edit page and refresh
   void _editAnnouncement() async {
-debugPrint('Editing announcement with ID: "${_currentAnnouncement.id}"');
-  debugPrint('Course ID: ${_currentAnnouncement.courseId}');
+    debugPrint('Editing announcement with ID: "${_currentAnnouncement.id}"');
+    debugPrint('Course ID: ${_currentAnnouncement.courseId}');
 
     final result = await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => CreateAnnouncementPage(
           classId: _currentAnnouncement.courseId,
           announcementId: _currentAnnouncement.id,
-          // Pass the data for pre-filling
           announcementData: {
             'title': _currentAnnouncement.title,
             'content': _currentAnnouncement.content,
@@ -135,7 +151,6 @@ debugPrint('Editing announcement with ID: "${_currentAnnouncement.id}"');
       }
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -210,7 +225,6 @@ debugPrint('Editing announcement with ID: "${_currentAnnouncement.id}"');
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.5),
             ),
             
-            // ... (Rest of the body) ...
             const SizedBox(height: 40),
             Center(
               child: Text(
