@@ -73,7 +73,8 @@ class _AddCoInstructorPageState extends State<AddCoInstructorPage> {
         setState(() {
           _searchResultId = userId;
           _searchResultName = '${userData['firstName'] ?? ''} ${userData['lastName'] ?? ''}'.trim();
-          if (_searchResultName!.isEmpty) _searchResultName = userDoc.id;
+          // FIX: Use the user's email as a fallback for the display name
+          if (_searchResultName!.isEmpty) _searchResultName = userData['email'] ?? userDoc.id;
         });
       } else {
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(
@@ -161,7 +162,7 @@ class _AddCoInstructorPageState extends State<AddCoInstructorPage> {
             ),
             const SizedBox(height: 10),
             ElevatedButton(
-              onPressed: _emailController.text.trim().isEmpty || _isLoading ? null : _searchUserByEmail,
+              onPressed: _isLoading ? null : _searchUserByEmail,
               child: const Text('Search User'),
             ),
             
