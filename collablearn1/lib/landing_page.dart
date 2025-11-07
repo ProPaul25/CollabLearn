@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'archived_classes_page.dart';
 import 'edit_profile_page.dart';         // <-- FIX: Changed to relative import
 import 'join_class_page.dart';          // <-- FIX: Changed to relative import
 import 'create_class_page.dart';        // <-- FIX: Changed to relative import
@@ -163,13 +164,28 @@ class _LandingPageState extends State<LandingPage> {
   List<Widget> _buildMenuItems() {
     // ... (This method is unchanged) ...
     // Instructor Menu
-    if (_userRole == 'instructor') {
+    if (_userRole == 'instructor' || _userRole == 'Co-Instructor') {
       return [
         ListTile(leading: const Icon(Icons.class_outlined), title: const Text('My Classes'), onTap: () => Navigator.pop(context)),
         ListTile(leading: const Icon(Icons.add_box_outlined), title: const Text('Create Class'), onTap: () {
           Navigator.pop(context); 
           Navigator.push(context, MaterialPageRoute(builder: (context) => const CreateClassPage())); 
         }),
+        ListTile(
+              leading: const Icon(Icons.archive),
+              title: const Text('Archived Classes'),
+              onTap: () {
+                Navigator.pop(context); // Close the drawer
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => const ArchivedClassesPage(), // Navigate to the new page
+                  ),
+                ).then((_) {
+                  // Re-fetch classes in case one was unarchived
+                  setState(() {});
+                });
+              },
+            ),
         ListTile(leading: const Icon(Icons.people_alt_outlined), title: const Text('Student Management'), onTap: () => Navigator.pop(context)),
       ];
     } else { // Student Menu

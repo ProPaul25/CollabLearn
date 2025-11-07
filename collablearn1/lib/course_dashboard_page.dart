@@ -39,11 +39,77 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
   int _selectedIndex = 0;
   
   late final Future<bool> _isInstructorFuture;
+  bool _isArchived = false;
 
   @override
   void initState() {
     super.initState();
     _isInstructorFuture = _isCurrentUserInstructor();
+    _fetchClassStatus();
+  }
+
+  Future<void> _fetchClassStatus() async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('classes').doc(widget.classId).get();
+      if (doc.exists) {
+        final data = doc.data();
+        if (mounted) {
+          setState(() {
+            // Check the existing isArchived field, default to false if null
+            _isArchived = data?['isArchived'] == true; 
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error fetching class status: $e');
+    }
+  }
+
+  Future<void> _unarchiveClass() async {
+  final bool? confirm = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Unarchive Class'),
+      content: Text('Are you sure you want to unarchive "${widget.className}"?'),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text('Unarchive'),
+        ),
+      ],
+    ),
+  );
+
+  if (confirm == true) {
+    try {
+      await FirebaseFirestore.instance.collection('classes').doc(widget.classId).update({
+        'isArchived': false, // <-- This is the key change!
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Class unarchived successfully!')),
+      );
+      
+      // Update local state and pop the dashboard page to return to the list
+      setState(() {
+        _isArchived = false;
+      });
+      // Pop twice: once for the dashboard page, and once for the class list to refresh itself.
+      // Since the main list is now filtered to show non-archived, this will work.
+      Navigator.of(context).pop(); 
+      Navigator.of(context).pop(); // Go back to the main class list screen
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to unarchive class: $e')),
+      );
+    }
+  }
   }
 
   // Helper method: Check if current user is an instructor
@@ -168,41 +234,56 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
             foregroundColor: Colors.white,
             elevation: 0,
             actions: [
-              // --- Archive & Announcement Button for Instructors ---
+              // --- Archive/Unarchive & Announcement Button for Instructors ---
               if (isInstructor) // Only show menu if user is an instructor
                 PopupMenuButton<String>(
                   onSelected: (value) {
                     if (value == 'archive') {
                       _archiveClass(); 
+                    } else if (value == 'unarchive') { // Handle unarchive selection
+                      _unarchiveClass();
                     }
                     else if (value == 'createAnnouncement' && _selectedIndex == 0) {
                         _navigateToCreateAnnouncement(context); 
                     }
                   },
                   itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                    // Option 1: Archive Class
-                    const PopupMenuItem<String>(
-                      value: 'archive',
-                      child: Row(
-                        children: [
-                          Icon(Icons.archive, color: Colors.red),
-                          SizedBox(width: 8),
-                          Text('Archive Class'),
-                        ],
+                    // 👇 Conditionally show Archive or Unarchive
+                    if (_isArchived)
+                      const PopupMenuItem<String>(
+                        value: 'unarchive',
+                        child: Row(
+                          children: [
+                            Icon(Icons.unarchive, color: Colors.green),
+                            SizedBox(width: 8),
+                            Text('Unarchive Class'),
+                          ],
+                        ),
+                      )
+                    else
+                      const PopupMenuItem<String>(
+                        value: 'archive',
+                        child: Row(
+                          children: [
+                            Icon(Icons.archive, color: Colors.deepOrange),
+                            SizedBox(width: 8),
+                            Text('Archive Class'),
+                          ],
+                        ),
                       ),
-                    ),
+                      
                     // Option 2: Create Announcement (Only visible on Stream Tab)
                     if (_selectedIndex == 0)
-                    const PopupMenuItem<String>(
-                      value: 'createAnnouncement',
-                      child: Row(
-                        children: [
-                          Icon(Icons.add_box_outlined, color: Colors.blue),
-                          SizedBox(width: 8),
-                          Text('Create Announcement'),
-                        ],
+                      const PopupMenuItem<String>(
+                        value: 'createAnnouncement',
+                        child: Row(
+                          children: [
+                            Icon(Icons.add_box_outlined, color: Colors.blue),
+                            SizedBox(width: 8),
+                            Text('Create Announcement'),
+                          ],
+                        ),
                       ),
-                    ),
                   ],
                 ),
             ],
