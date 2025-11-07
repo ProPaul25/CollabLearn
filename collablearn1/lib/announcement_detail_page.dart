@@ -44,6 +44,15 @@ class _AnnouncementDetailPageState extends State<AnnouncementDetailPage> {
 
   // NEW: Delete Confirmation Dialog and Logic
   Future<void> _deleteAnnouncement() async {
+  if (_currentAnnouncement.id.isEmpty) {
+    // Show an error or simply stop the operation
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error: Announcement ID is missing.')),
+      );
+    }
+    return;
+  }
     final bool confirm = await showDialog(
       context: context,
       builder: (context) => AlertDialog(
