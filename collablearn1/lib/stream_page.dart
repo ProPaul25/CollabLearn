@@ -1,12 +1,10 @@
-// lib/stream_page.dart - CORRECTED
+// lib/stream_page.dart - COMPLETELY FIXED
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-// Import for the detail page
 import 'announcement_detail_page.dart'; 
 
-// --- DATA MODEL (Unchanged) ---
-// --- DATA MODEL (MODIFIED) ---
+// --- DATA MODEL ---
 class Announcement {
   final String id;
   final String title;
@@ -14,7 +12,7 @@ class Announcement {
   final String postedBy;
   final Timestamp postedOn;
   final String courseId;
-  final String postedById; // <--- ADDED FIELD
+  final String postedById;
 
   Announcement({
     required this.id,
@@ -23,26 +21,26 @@ class Announcement {
     required this.postedBy,
     required this.postedOn,
     required this.courseId,
-    required this.postedById, // <--- ADDED FIELD
+    required this.postedById,
   });
   
   factory Announcement.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>?;
     if (data == null) throw Exception("Announcement data is null");
+    
     return Announcement(
-      id: doc.id,
+      id: doc.id, // This captures the Firestore document ID
       title: data['title'] ?? 'No Title',
       content: data['content'] ?? 'No content provided.',
       postedBy: data['postedBy'] ?? 'Unknown User',
       postedOn: data['postedOn'] ?? Timestamp.now(),
       courseId: data['courseId'] ?? '',
-      postedById: data['postedById'] ?? '', // <--- MAPPED
+      postedById: data['postedById'] ?? '',
     );
   }
 }
-// --- END DATA MODEL ---
 
-class StreamPage extends StatelessWidget {
+class StreamPage extends StatefulWidget {
   final String classId;
 
   const StreamPage({
@@ -50,7 +48,12 @@ class StreamPage extends StatelessWidget {
     required this.classId,
   });
 
-  // 1. Real-time Stream for Announcements (Unchanged)
+  @override
+  State<StreamPage> createState() => _StreamPageState();
+}
+
+class _StreamPageState extends State<StreamPage> {
+  
   Stream<List<Announcement>> getAnnouncementsStream(String courseId) {
     return FirebaseFirestore.instance
         .collection('announcements')
@@ -58,20 +61,19 @@ class StreamPage extends StatelessWidget {
         .orderBy('postedOn', descending: true)
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs
-          .map((doc) => Announcement.fromFirestore(doc))
-          .toList();
+      return snapshot.docs.map((doc) {
+        print('📄 Document ID from Firestore: ${doc.id}'); // Debug print
+        return Announcement.fromFirestore(doc);
+      }).toList();
     });
   }
 
-  // --- UI BUILDING STARTS HERE (NOW SIMPLIFIED) ---
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<Announcement>>(
-      stream: getAnnouncementsStream(classId),
+      stream: getAnnouncementsStream(widget.classId),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          // Use a smaller, centered indicator as this is now an embedded widget
           return const Padding(
             padding: EdgeInsets.symmetric(vertical: 40.0),
             child: Center(child: CircularProgressIndicator()),
@@ -84,9 +86,6 @@ class StreamPage extends StatelessWidget {
 
         final announcements = snapshot.data ?? [];
 
-        // --- FIX: Return a Column directly ---
-        // This widget is now just the list of posts (or an empty message)
-        // It no longer has its own scrolling, padding, or extra UI elements
         return Column(
           children: [
             if (announcements.isEmpty)
@@ -95,7 +94,6 @@ class StreamPage extends StatelessWidget {
                 child: Center(child: Text('No announcements posted yet for this course.')),
               )
             else
-              // Create a list of widgets and expand them into the Column
               ...announcements.map((announcement) => _buildAnnouncementCard(context, announcement)).toList(),
           ],
         );
@@ -103,9 +101,6 @@ class StreamPage extends StatelessWidget {
     );
   }
 
-  // --- Helper Widgets (Unchanged) ---
-
-  // Refactored to navigate to the AnnouncementDetailPage
   Widget _buildAnnouncementCard(BuildContext context, Announcement announcement) {
     String timeAgo(Timestamp timestamp) {
       final duration = DateTime.now().difference(timestamp.toDate());
@@ -141,19 +136,26 @@ class StreamPage extends StatelessWidget {
           ],
         ),
         isThreeLine: true,
-        onTap: () {
-          // Navigate to the full announcement detail view
-          Navigator.of(context).push(
+        onTap: () async {
+          print('🔍 Tapping card with announcement ID: "${announcement.id}"'); // Debug
+          
+          // Navigate and wait for result
+          final result = await Navigator.of(context).push(
             MaterialPageRoute(
               builder: (context) => AnnouncementDetailPage(announcement: announcement),
             ),
           );
+          
+          // If announcement was deleted or edited, the stream will auto-refresh
+          // No manual refresh needed since we're using StreamBuilder
+          if (result == true && mounted) {
+            // Optional: Show a snackbar or do nothing, stream handles it
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Changes saved'), duration: Duration(seconds: 1)),
+            );
+          }
         },
       ),
     );
   }
-
-  // --- REMOVED _fetchCourseMetadata ---
-  // --- REMOVED _buildDynamicCourseInfoCard ---
-  // --- REMOVED _buildNewPostButton ---
 }

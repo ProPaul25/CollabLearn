@@ -44,6 +44,8 @@ class _AnnouncementDetailPageState extends State<AnnouncementDetailPage> {
 
   // NEW: Delete Confirmation Dialog and Logic
   Future<void> _deleteAnnouncement() async {
+  debugPrint('Attempting to delete announcement with ID: "${_currentAnnouncement.id}"');
+  debugPrint('ID length: ${_currentAnnouncement.id.length}');
   if (_currentAnnouncement.id.isEmpty) {
     // Show an error or simply stop the operation
     if (mounted) {
@@ -98,6 +100,9 @@ class _AnnouncementDetailPageState extends State<AnnouncementDetailPage> {
 
   // NEW: Function to navigate to Edit page and refresh
   void _editAnnouncement() async {
+debugPrint('Editing announcement with ID: "${_currentAnnouncement.id}"');
+  debugPrint('Course ID: ${_currentAnnouncement.courseId}');
+
     final result = await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => CreateAnnouncementPage(
