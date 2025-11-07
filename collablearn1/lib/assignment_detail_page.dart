@@ -1,29 +1,28 @@
-// lib/assignment_detail_page.dart - FIXED
+// lib/assignment_detail_page.dart - CORRECTED
 
-import 'student_submission_detail.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb; 
-import 'package:cloudinary_public/cloudinary_public.dart'; 
+import 'package:cloudinary_public/cloudinary_public.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
-// Import models from the corrected file
-import 'study_materials_view_page.dart'; 
 
-// --- CLOUDINARY DEPENDENCY (Unchanged) ---
-const String _CLOUD_NAME = 'dc51dx2da'; 
-const String _UPLOAD_PRESET = 'CollabLearn'; 
-final CloudinaryPublic cloudinary = CloudinaryPublic(_CLOUD_NAME, _UPLOAD_PRESET, cache: false);
-// ----------------------------------------------
+// Import necessary files
+import 'study_materials_view_page.dart'; // Contains Assignment and AssignmentItem models
+import 'create_assignment_page.dart';     // For instructor's Edit button
+import 'submission_review_page.dart';    // For instructor's overall review page
 
-// --- The 'Assignment' class definition is REMOVED from this file ---
-// It is now defined in and imported from 'study_materials_view_page.dart'
+// --- CLOUDINARY DEPENDENCY (Ensure these are correct) ---
+const String _CLOUD_NAME = 'dc51dx2da';
+const String _UPLOAD_PRESET = 'CollabLearn';
 
+final CloudinaryPublic cloudinary =
+    CloudinaryPublic(_CLOUD_NAME, _UPLOAD_PRESET, cache: false);
+// --------------------------------------------------------
 
 class AssignmentDetailPage extends StatefulWidget {
-  final Assignment assignment; // This now correctly finds the Assignment model
+  final Assignment assignment; // Full Assignment model
 
   const AssignmentDetailPage({super.key, required this.assignment});
 
@@ -32,655 +31,604 @@ class AssignmentDetailPage extends StatefulWidget {
 }
 
 class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
-  // ... (State logic is unchanged) ...
-  final User? user = FirebaseAuth.instance.currentUser;
-  late Future<bool> _isInstructorFuture;
-  String _instructorId = '';
+  final _currentUser = FirebaseAuth.instance.currentUser;
+  late final Future<bool> _isInstructorFuture;
 
-  @override
-  void initState() {
-    super.initState();
-    _isInstructorFuture = _checkIfInstructor();
-  }
-
-  Future<bool> _checkIfInstructor() async {
-    if (user == null) return false;
-    try {
-      final classDoc = await FirebaseFirestore.instance
-          .collection('classes')
-          .doc(widget.assignment.courseId)
-          .get();
-      if (classDoc.exists) {
-        _instructorId = classDoc.data()?['instructorId'] ?? '';
-        return user!.uid == _instructorId;
-      }
-      return false;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  String _formatDueDate(Timestamp timestamp) {
-    return DateFormat('MMM dd, yyyy HH:mm').format(timestamp.toDate());
-  }
-
-  Future<void> _launchUrl(String url) async {
-    if (url.isEmpty) return;
-    final uri = Uri.parse(url);
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-      throw Exception('Could not launch $uri');
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // ... (Build method is unchanged) ...
-    final primaryColor = Theme.of(context).colorScheme.primary;
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.assignment.title),
-        backgroundColor: primaryColor,
-        foregroundColor: Colors.white,
-      ),
-      body: FutureBuilder<bool>(
-        future: _isInstructorFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          
-          final bool isInstructor = snapshot.data ?? false;
-
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Card(
-                  elevation: 2,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text('Due: ${_formatDueDate(widget.assignment.dueDate)}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
-                            Text('${widget.assignment.points} Points', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: primaryColor)),
-                          ],
-                        ),
-                        const Divider(height: 20),
-                        Text(widget.assignment.description, style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.5)),
-                        
-                        if (widget.assignment.fileUrl != null && widget.assignment.fileName != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 15.0),
-                            child: InkWell(
-                              onTap: () => _launchUrl(widget.assignment.fileUrl!),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.grey.shade300),
-                                ),
-                                child: ListTile(
-                                  leading: Icon(Icons.attach_file, color: primaryColor),
-                                  title: Text(widget.assignment.fileName!, style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold)),
-                                  trailing: const Icon(Icons.download_for_offline, color: Colors.grey),
-                                ),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                if (isInstructor)
-                  _TeacherAssignmentView(
-                    assignment: widget.assignment,
-                    classId: widget.assignment.courseId,
-                  )
-                else
-                  _StudentAssignmentView(
-                    assignment: widget.assignment,
-                    user: user!,
-                  ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-// ===================================================================
-// 1. STUDENT VIEW WIDGET (Unchanged)
-// ===================================================================
-class _StudentAssignmentView extends StatefulWidget {
-  final Assignment assignment;
-  final User user;
-
-  const _StudentAssignmentView({
-    required this.assignment,
-    required this.user,
-  });
-
-  @override
-  State<_StudentAssignmentView> createState() => _StudentAssignmentViewState();
-}
-
-class _StudentAssignmentViewState extends State<_StudentAssignmentView> {
-  // ... (All state logic is unchanged) ...
+  // Student submission state
   PlatformFile? _pickedFile;
   bool _isLoading = false;
   double _uploadProgress = 0;
-  Map<String, dynamic>? _currentSubmission;
-  bool _isFetchingStatus = true;
+  Map<String, dynamic>? _existingSubmission;
+  String? _currentUserName;
 
   @override
   void initState() {
     super.initState();
-    _fetchSubmissionStatus();
+    _isInstructorFuture = _isCurrentUserInstructor();
+    _loadCurrentUserData();
   }
 
-  String _formatSubmitDate(Timestamp timestamp) {
-    return DateFormat('MMM dd, yyyy HH:mm').format(timestamp.toDate());
+  // --- Role & Data Fetching ---
+
+  Future<void> _loadCurrentUserData() async {
+    if (_currentUser == null) return;
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(_currentUser.uid)
+          .get();
+      if (userDoc.exists) {
+        final data = userDoc.data();
+        final String firstName = data?['firstName'] ?? '';
+        final String lastName = data?['lastName'] ?? '';
+        String calculatedName = "$firstName $lastName".trim();
+        setState(() {
+          _currentUserName = calculatedName.isEmpty
+              ? (_currentUser.email ?? 'Anonymous')
+              : calculatedName;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading user data: $e');
+    }
   }
 
-  Future<void> _fetchSubmissionStatus() async {
-    setState(() => _isFetchingStatus = true);
-    final query = await FirebaseFirestore.instance
-        .collection('assignment_submissions')
+  Future<bool> _isCurrentUserInstructor() async {
+    if (_currentUser == null) return false;
+    return widget.assignment.postedById == _currentUser.uid;
+  }
+
+  Future<void> _fetchUserSubmission() async {
+    if (_currentUser == null) return;
+
+    final submissionQuery = await FirebaseFirestore.instance
+        .collection('submissions')
         .where('assignmentId', isEqualTo: widget.assignment.id)
-        .where('studentId', isEqualTo: widget.user.uid)
+        .where('studentId', isEqualTo: _currentUser.uid)
         .limit(1)
         .get();
 
     if (mounted) {
       setState(() {
-        if (query.docs.isNotEmpty) {
-          _currentSubmission = query.docs.first.data();
+        if (submissionQuery.docs.isNotEmpty) {
+          _existingSubmission = {
+            ...submissionQuery.docs.first.data(),
+            'submissionDocId': submissionQuery.docs.first.id,
+          };
         } else {
-          _currentSubmission = null;
+          _existingSubmission = null;
         }
-        _isFetchingStatus = false;
       });
     }
   }
-  
+
+  // --- File Handling and Submission Logic ---
+
   Future<void> _pickFile() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['pdf', 'docx', 'doc', 'txt', 'zip', 'png', 'jpg'],
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.any,
     );
-    if (result != null && mounted) {
-      setState(() => _pickedFile = result.files.first);
+
+    if (result != null) {
+      setState(() {
+        _pickedFile = result.files.first;
+        _uploadProgress = 0;
+      });
     }
   }
 
-  Future<void> _launchUrl(String url) async {
-    if (url.isEmpty) return;
-    final uri = Uri.parse(url);
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-      throw Exception('Could not launch $uri');
+  Future<String?> _uploadFileToCloudinary(PlatformFile file) async {
+    if (file.bytes == null) {
+      _showSnackBar('Error: File bytes are null.');
+      return null;
+    }
+
+    try {
+      // FIXED: Removed unused resourceType variable and use CloudinaryResourceType.Raw directly
+      final bytes = _pickedFile!.bytes!;
+      final response = await cloudinary.uploadFile(
+        // FIXED: Use fromBytesData instead of fromBytes
+        CloudinaryFile.fromBytesData(
+          bytes,
+          resourceType: CloudinaryResourceType.Raw,
+          folder: 'collab-learn/submissions/${widget.assignment.courseId}',
+          identifier: _pickedFile!.name,
+        ),
+        onProgress: (count, total) {
+          if (mounted) {
+            setState(() {
+              _uploadProgress = count / total;
+            });
+          }
+        },
+      );
+      return response.secureUrl;
+    } on CloudinaryException catch (e) {
+      debugPrint('Cloudinary upload error: ${e.message}');
+      _showSnackBar('File upload failed: ${e.message}');
+      return null;
+    } catch (e) {
+      debugPrint('General upload error: $e');
+      _showSnackBar('An unexpected error occurred during file upload: $e');
+      return null;
     }
   }
 
-  Future<void> _uploadAndSubmit() async {
-    // ... (All submission logic is unchanged) ...
+  Future<void> _submitAssignment() async {
     if (_pickedFile == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please select a file to submit.'), backgroundColor: Colors.orange),
-        );
-      }
+      _showSnackBar('Please attach a file to submit.');
       return;
     }
-
-    if (DateTime.now().isAfter(widget.assignment.dueDate.toDate())) {
-       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Submission failed: The due date has passed.'), backgroundColor: Colors.red),
-        );
-      }
+    if (_currentUser == null || _currentUserName == null) {
+      _showSnackBar('User data not loaded. Please try again.');
       return;
     }
+    if (_isLoading) return;
 
     setState(() {
       _isLoading = true;
       _uploadProgress = 0;
     });
 
+    final fileUrl = await _uploadFileToCloudinary(_pickedFile!);
+
+    if (fileUrl == null) {
+      setState(() {
+        _isLoading = false;
+      });
+      return;
+    }
+
     try {
-      final submissionTime = Timestamp.now();
-      
-      CloudinaryResourceType resourceType = CloudinaryResourceType.Raw;
-      if (['jpg', 'png'].contains(_pickedFile!.extension)) {
-          resourceType = CloudinaryResourceType.Image;
-      }
-      
-      CloudinaryFile fileToUpload;
-      if (kIsWeb) {
-        fileToUpload = CloudinaryFile.fromByteData(
-          _pickedFile!.bytes!.buffer.asByteData(), 
-          resourceType: resourceType,
-          folder: 'collablearn/submissions/${widget.assignment.courseId}/${widget.assignment.id}',
-          publicId: '${widget.user.uid}_${_pickedFile!.name}',
-          identifier: _pickedFile!.name, 
-        );
-      } else {
-        fileToUpload = CloudinaryFile.fromFile(
-          _pickedFile!.path!, 
-          resourceType: resourceType,
-          folder: 'collablearn/submissions/${widget.assignment.courseId}/${widget.assignment.id}',
-          publicId: '${widget.user.uid}_${_pickedFile!.name}',
-        );
-      }
-      
-      final CloudinaryResponse response = await cloudinary.uploadFile(
-        fileToUpload,
-        onProgress: (count, total) {
-          if (mounted) setState(() => _uploadProgress = count / total);
-        },
-      );
-      
-      if (response.secureUrl.isEmpty) {
-          throw Exception("Cloudinary upload failed.");
-      }
-      
-      final downloadUrl = response.secureUrl; 
-      final cloudinaryPublicId = response.publicId; 
-
-      final userDoc = await FirebaseFirestore.instance.collection('users').doc(widget.user.uid).get();
-      final studentName = '${userDoc.data()?['firstName'] ?? ''} ${userDoc.data()?['lastName'] ?? ''}'.trim();
-
       final submissionData = {
         'assignmentId': widget.assignment.id,
-        'courseId': widget.assignment.courseId,
-        'studentId': widget.user.uid,
-        'studentName': studentName.isEmpty ? 'Unknown Student' : studentName,
-        'submittedFileUrl': downloadUrl,
-        'cloudinaryPublicId': cloudinaryPublicId, 
-        'submittedFileName': _pickedFile!.name,
-        'submissionTime': submissionTime,
-        'graded': false,
-        'score': null,
+        'studentId': _currentUser.uid,
+        'studentName': _currentUserName,
+        'submittedOn': FieldValue.serverTimestamp(),
+        'fileUrl': fileUrl,
+        'fileName': _pickedFile!.name,
+        'isGraded': false,
+        'grade': null,
         'feedback': null,
       };
 
-      if (_currentSubmission != null) {
-        final existingRef = await FirebaseFirestore.instance
-          .collection('assignment_submissions')
-          .where('assignmentId', isEqualTo: widget.assignment.id)
-          .where('studentId', isEqualTo: widget.user.uid)
-          .limit(1)
-          .get();
-        
-        if (existingRef.docs.isNotEmpty) {
-          await existingRef.docs.first.reference.update(submissionData);
-        }
+      if (_existingSubmission != null) {
+        // RESUBMIT/UPDATE
+        await FirebaseFirestore.instance
+            .collection('submissions')
+            .doc(_existingSubmission!['submissionDocId'])
+            .update(submissionData);
+        _showSnackBar('Assignment successfully re-submitted!');
       } else {
-        await FirebaseFirestore.instance.collection('assignment_submissions').add(submissionData);
+        // NEW SUBMISSION
+        await FirebaseFirestore.instance
+            .collection('submissions')
+            .add(submissionData);
+        _showSnackBar('Assignment successfully submitted!');
       }
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Assignment submitted successfully!'), backgroundColor: Colors.green),
-        );
-        _fetchSubmissionStatus(); 
-        _pickedFile = null; 
-      }
+      // Reload submission status
+      await _fetchUserSubmission();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Submission failed: $e'), backgroundColor: Colors.red),
-        );
-      }
+      debugPrint('Error submitting assignment: $e');
+      _showSnackBar('Failed to submit assignment: $e');
     } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // ... (All build logic is unchanged) ...
-    if (_isFetchingStatus) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    final primaryColor = Theme.of(context).colorScheme.primary;
-    final isSubmitted = _currentSubmission != null;
-    final isLate = DateTime.now().isAfter(widget.assignment.dueDate.toDate());
-    final isGraded = _currentSubmission?['graded'] ?? false;
-    final score = _currentSubmission?['score'];
-    final feedback = _currentSubmission?['feedback'] as String?;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: isGraded ? Colors.green.withOpacity(0.1) : (isSubmitted ? Colors.blue.withOpacity(0.1) : Colors.red.withOpacity(0.1)),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: isGraded ? Colors.green : (isSubmitted ? Colors.blue : Colors.red),
-              width: 1.5,
-            ),
-          ),
-          child: Row(
-            children: [
-              Icon(isGraded ? Icons.check_circle : (isSubmitted ? Icons.upload_file : (isLate ? Icons.error : Icons.hourglass_empty)),
-                    color: isGraded ? Colors.green : (isSubmitted ? Colors.blue : Colors.red)),
-              const SizedBox(width: 10),
-              Text(
-                isGraded ? 'GRADED: $score/${widget.assignment.points}' : (isSubmitted ? 'SUBMITTED' : (isLate ? 'MISSING (LATE)' : 'NOT SUBMITTED')),
-                style: TextStyle(fontWeight: FontWeight.bold, color: isGraded ? Colors.green : (isSubmitted ? Colors.blue : Colors.red)),
-              ),
-            ],
-          ),
-        ),
-        
-        if (isGraded && feedback != null && feedback.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 16.0),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Instructor Feedback:', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 5),
-                  Text(feedback),
-                ],
-              ),
-            ),
-          ),
-
-        const SizedBox(height: 40),
-
-        const Text('Your Submission', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-        const Divider(),
-        
-        if (isSubmitted)
-          Card(
-            color: Colors.blue.shade50,
-            child: ListTile(
-              leading: Icon(Icons.file_present, color: Colors.blue.shade700),
-              title: Text(_currentSubmission!['submittedFileName'] ?? 'Submitted File', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue.shade900)),
-              subtitle: Text('Submitted: ${_formatSubmitDate(_currentSubmission!['submissionTime'])}'),
-              trailing: const Icon(Icons.open_in_new),
-              onTap: () => _launchUrl(_currentSubmission!['submittedFileUrl']),
-            ),
-          ),
-        
-        const SizedBox(height: 20),
-        
-        ElevatedButton.icon(
-          onPressed: _isLoading ? null : _pickFile,
-          icon: const Icon(Icons.attach_file),
-          label: Text(_pickedFile == null ? 'Select Answer File' : 'Change File'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.orange.shade400,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          ),
-        ),
-        
-        if (_pickedFile != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 10.0),
-            child: Text('Selected: ${_pickedFile!.name}', style: const TextStyle(fontStyle: FontStyle.italic)),
-          ),
-        
-        const SizedBox(height: 10),
-        
-        if (_isLoading)
-          Column(
-            children: [
-              LinearProgressIndicator(value: _uploadProgress.clamp(0.0, 1.0), color: primaryColor),
-              Padding(
-                padding: const EdgeInsets.only(top: 8.0),
-                child: Text('${(_uploadProgress * 100).toStringAsFixed(0)}% Uploading...'),
-              ),
-              const SizedBox(height: 10),
-            ],
-          ),
-
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: (_isLoading || isGraded) ? null : _uploadAndSubmit,
-            icon: _isLoading ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Icon(Icons.send),
-            label: Text(
-              isGraded ? 'Graded - Cannot Resubmit' : (isSubmitted ? 'Re-Submit Assignment' : 'Submit Assignment')
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: isGraded ? Colors.grey : primaryColor,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 18),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// ===================================================================
-// 2. TEACHER VIEW WIDGET (Unchanged)
-// ===================================================================
-class _TeacherAssignmentView extends StatelessWidget {
-  final Assignment assignment;
-  final String classId;
-
-  const _TeacherAssignmentView({
-    required this.assignment,
-    required this.classId,
-  });
-  
-  // ... (All fetch logic is unchanged) ...
-  Future<Map<String, dynamic>> _getSubmissionsData() async {
-    // 1. Get all students in the class
-    final classDoc = await FirebaseFirestore.instance.collection('classes').doc(classId).get();
-    final studentIds = List<String>.from(classDoc.data()?['studentIds'] ?? []);
-    
-    // 2. Get all submissions for this assignment
-    final submissionsSnapshot = await FirebaseFirestore.instance
-        .collection('assignment_submissions')
-        .where('assignmentId', isEqualTo: assignment.id)
-        .get();
-        
-    // 3. Map submissions by studentId for easy lookup
-    final Map<String, Map<String, dynamic>> submissionsMap = {};
-    for (var doc in submissionsSnapshot.docs) {
-      final data = doc.data();
-      data['submissionDocId'] = doc.id; // Add the doc ID for navigation
-      submissionsMap[data['studentId']] = data;
-    }
-    
-    // 4. Fetch details for all students
-    List<Map<String, dynamic>> allStudents = [];
-    if (studentIds.isNotEmpty) {
-      final studentsSnapshot = await FirebaseFirestore.instance
-          .collection('users')
-          .where(FieldPath.documentId, whereIn: studentIds)
-          .get();
-      allStudents = studentsSnapshot.docs.map((doc) => doc.data()..['uid'] = doc.id).toList();
-    }
-    
-    // 5. Categorize students
-    final List<Map<String, dynamic>> submitted = [];
-    final List<Map<String, dynamic>> notSubmitted = [];
-
-    for (var student in allStudents) {
-      final studentId = student['uid'];
-      final studentName = '${student['firstName'] ?? ''} ${student['lastName'] ?? ''}'.trim();
-      
-      if (submissionsMap.containsKey(studentId)) {
-        final submission = submissionsMap[studentId]!;
-        submission['studentName'] = studentName.isEmpty ? 'Student' : studentName;
-        submitted.add(submission);
-      } else {
-        notSubmitted.add({
-          'studentName': studentName.isEmpty ? 'Student' : studentName,
-          'studentId': studentId,
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _pickedFile = null;
+          _uploadProgress = 0;
         });
       }
     }
-
-    return {
-      'totalStudents': studentIds.length,
-      'submittedList': submitted,
-      'notSubmittedList': notSubmitted,
-    };
   }
-  
-  @override
-  Widget build(BuildContext context) {
-    // ... (All build logic is unchanged) ...
-    final primaryColor = Theme.of(context).colorScheme.primary;
 
-    return FutureBuilder<Map<String, dynamic>>(
-      future: _getSubmissionsData(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (snapshot.hasError) {
-          return Center(child: Text('Error loading submissions: ${snapshot.error}'));
-        }
-        
-        final data = snapshot.data ?? {};
-        final totalStudents = data['totalStudents'] ?? 0;
-        final submittedList = data['submittedList'] as List<Map<String, dynamic>>? ?? [];
-        final notSubmittedList = data['notSubmittedList'] as List<Map<String, dynamic>>? ?? [];
-        
-        final submittedCount = submittedList.length;
-        final notSubmittedCount = notSubmittedList.length; 
+  void _showSnackBar(String message) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    }
+  }
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+  // --- UI Helpers ---
+
+  Future<void> _launchUrl(String url) async {
+    final Uri uri = Uri.parse(url);
+    if (!await launchUrl(uri)) {
+      _showSnackBar('Could not open file.');
+    }
+  }
+
+  Widget _buildFileLink(String url, String fileName, Color color) {
+    return InkWell(
+      onTap: () => _launchUrl(url),
+      child: Padding(
+        padding: const EdgeInsets.only(top: 8.0),
+        child: Row(
           children: [
-            Text('Submissions ($totalStudents)', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8.0),
+            Icon(Icons.insert_drive_file, color: color),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                fileName,
+                style: TextStyle(color: color, decoration: TextDecoration.underline),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // --- Student View ---
+
+  Widget _buildStudentSubmissionView() {
+    final primaryColor = Theme.of(context).colorScheme.primary;
+    final dueDateTime = widget.assignment.dueDate.toDate();
+    final isOverdue = DateTime.now().isAfter(dueDateTime);
+    // FIXED: Removed unused deadlineText variable
+
+    String statusText;
+    Color statusColor;
+    IconData statusIcon;
+
+    if (_existingSubmission != null) {
+      final isGraded = _existingSubmission!['isGraded'] == true;
+      if (isGraded) {
+        statusText = 'GRADED: ${_existingSubmission!['grade']} / ${widget.assignment.points}';
+        statusColor = Colors.green.shade800;
+        statusIcon = Icons.done_all;
+      } else {
+        statusText = isOverdue ? 'Submitted Late' : 'Submitted';
+        statusColor = isOverdue ? Colors.orange.shade700 : Colors.green;
+        statusIcon = Icons.check_circle;
+      }
+    } else {
+      statusText = isOverdue ? 'MISSING / Overdue' : 'Assigned';
+      statusColor = isOverdue ? Colors.red.shade700 : Colors.blue;
+      statusIcon = isOverdue ? Icons.error_outline : Icons.pending_actions;
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Submission Status Card
+          Card(
+            // FIXED: Use withValues instead of withOpacity to avoid deprecation
+            color: statusColor.withValues(alpha: 0.1), 
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: statusColor)),
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
               child: Row(
                 children: [
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(color: Colors.green.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
-                      child: Column(
-                        children: [
-                          Text('$submittedCount', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.green)),
-                          const Text('Submitted'),
-                        ],
-                      ),
-                    ),
-                  ),
+                  Icon(statusIcon, color: statusColor, size: 24),
                   const SizedBox(width: 10),
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(color: Colors.red.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
-                      child: Column(
-                        children: [
-                          Text('$notSubmittedCount', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.red)),
-                          const Text('Not Submitted'),
-                        ],
-                      ),
-                    ),
+                  Text(statusText, style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 16)),
+                  const Spacer(),
+                  if (_existingSubmission != null && _existingSubmission!['isGraded'] == true)
+                    Text('Points: ${_existingSubmission!['grade']} / ${widget.assignment.points}', style: TextStyle(color: statusColor, fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          
+          // Submission Form
+          Text(
+            _existingSubmission != null ? 'Resubmit Your Work' : 'Submit Your Work',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const Divider(),
+          
+          if (_existingSubmission != null)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Current Submission:'),
+                _buildFileLink(
+                  _existingSubmission!['fileUrl'],
+                  _existingSubmission!['fileName'],
+                  Colors.blue.shade700,
+                ),
+                const SizedBox(height: 15),
+              ],
+            ),
+
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _isLoading ? null : _pickFile,
+                  icon: const Icon(Icons.upload_file),
+                  label: Text(_pickedFile != null ? 'Change File' : 'Pick File'),
+                ),
+              ),
+            ],
+          ),
+          
+          if (_pickedFile != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10.0),
+              child: Row(
+                children: [
+                  Icon(Icons.insert_drive_file, color: primaryColor),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text('Selected: ${_pickedFile!.name}', overflow: TextOverflow.ellipsis)),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 18),
+                    onPressed: () => setState(() { _pickedFile = null; }),
                   ),
                 ],
               ),
             ),
 
-            const SizedBox(height: 20),
-            Text('Submitted Files', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green.shade700)),
-            const Divider(),
-            if (submittedList.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 10),
-                child: Text('No submissions yet.'),
+          if (_isLoading)
+            Column(
+              children: [
+                const SizedBox(height: 10),
+                LinearProgressIndicator(value: _uploadProgress.clamp(0.0, 1.0), color: primaryColor),
+                Padding(
+                  padding: const EdgeInsets.only(top: 8.0, bottom: 20.0),
+                  child: Text('${(_uploadProgress * 100).toStringAsFixed(0)}% Uploading...'),
+                ),
+              ],
+            ),
+            
+          const SizedBox(height: 20),
+
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _isLoading ? null : _submitAssignment,
+              icon: _isLoading
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : Icon(_existingSubmission != null ? Icons.refresh : Icons.send),
+              label: Text(_isLoading 
+                  ? 'Submitting...' 
+                  : (_existingSubmission != null ? 'Resubmit Assignment' : 'Submit Assignment')),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: primaryColor,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 18),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
               ),
-            ...submittedList.map((submission) {
-              final isGraded = submission['graded'] as bool? ?? false;
-              final score = submission['score'];
-              
-              // This now correctly finds the AssignmentItem model
-              final assignmentItem = AssignmentItem(
-                id: assignment.id,
-                title: assignment.title,
-                description: assignment.description,
-                points: assignment.points,
-                dueDate: assignment.dueDate,
-                postedBy: assignment.postedBy,
-                courseId: assignment.courseId,
-                fileUrl: assignment.fileUrl,
-                fileName: assignment.fileName,
-              );
-              
-              return Card(
-                elevation: 1,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                child: ListTile(
-                  leading: Icon(Icons.person, color: primaryColor),
-                  title: Text(submission['studentName'], style: const TextStyle(fontWeight: FontWeight.w500)),
-                  trailing: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: isGraded ? Colors.green.withOpacity(0.1) : Colors.grey.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(5),
+            ),
+          ),
+          
+          // Optional: Display grade/feedback
+          if (_existingSubmission != null && _existingSubmission!['isGraded'] == true) ...[
+            const SizedBox(height: 20),
+            Text('Instructor Feedback', style: Theme.of(context).textTheme.titleLarge),
+            const Divider(),
+            Card(
+              elevation: 0,
+              color: Colors.grey.shade100,
+              child: Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Text(
+                  _existingSubmission!['feedback'] ?? 'No feedback provided.',
+                  style: const TextStyle(fontStyle: FontStyle.italic),
+                ),
+              ),
+            ),
+          ]
+        ],
+      ),
+    );
+  }
+
+  // --- Instructor View ---
+
+  Widget _buildInstructorReviewView(String classId) {
+    final assignmentItem = AssignmentItem(
+      id: widget.assignment.id,
+      title: widget.assignment.title,
+      dueDate: widget.assignment.dueDate,
+      description: widget.assignment.description,
+      points: widget.assignment.points,
+      postedBy: widget.assignment.postedBy,
+      courseId: widget.assignment.courseId,
+      postedById: widget.assignment.postedById, 
+      fileUrl: widget.assignment.fileUrl,
+      fileName: widget.assignment.fileName,
+    );
+
+    return SubmissionReviewPage(
+      assignment: assignmentItem,
+      classId: classId,
+    );
+  }
+
+  // --- Main Build Method ---
+
+  @override
+  Widget build(BuildContext context) {
+    final primaryColor = Theme.of(context).colorScheme.primary;
+    final dueDateTime = widget.assignment.dueDate.toDate();
+    final isOverdue = DateTime.now().isAfter(dueDateTime);
+    final deadlineText = DateFormat('MMM d, yyyy @ h:mm a').format(dueDateTime);
+    
+    // The Assignment details section, common to both views
+    final assignmentDetails = SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            widget.assignment.title,
+            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: primaryColor,
+                ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Icon(Icons.event, size: 18, color: isOverdue ? Colors.red : Colors.grey),
+              const SizedBox(width: 5),
+              Text(
+                'Due: $deadlineText',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: isOverdue ? Colors.red.shade700 : Colors.grey.shade700,
+                ),
+              ),
+              const Spacer(),
+              Icon(Icons.score, size: 18, color: Colors.amber.shade700),
+              const SizedBox(width: 5),
+              Text(
+                '${widget.assignment.points} Points',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.amber.shade700,
+                ),
+              ),
+            ],
+          ),
+          const Divider(height: 30),
+          
+          Text(
+            'Instructions',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            widget.assignment.description,
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.5),
+          ),
+          
+          if (widget.assignment.fileUrl?.isNotEmpty == true) ...[ 
+            const SizedBox(height: 20),
+            Text(
+              'Attachment',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            _buildFileLink(
+              widget.assignment.fileUrl ?? '',
+              widget.assignment.fileName ?? '',
+              primaryColor,
+            ),
+          ],
+          
+          const SizedBox(height: 40),
+        ],
+      ),
+    );
+
+    return FutureBuilder<bool>(
+      future: _isInstructorFuture,
+      builder: (context, snapshot) {
+        final isInstructor = snapshot.data ?? false;
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        // Student View: Always fetch submission status before showing content
+        if (!isInstructor) {
+          _fetchUserSubmission();
+        }
+        
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('Assignment Details'),
+            backgroundColor: primaryColor,
+            foregroundColor: Colors.white,
+            actions: [
+              if (isInstructor)
+                PopupMenuButton<String>(
+                  onSelected: (value) async {
+                    if (value == 'edit') {
+                      final shouldRefresh = await Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => CreateAssignmentPage(
+                            classId: widget.assignment.courseId,
+                            assignmentId: widget.assignment.id,
+                            assignmentData: { 
+                              'title': widget.assignment.title,
+                              'description': widget.assignment.description,
+                              'points': widget.assignment.points,
+                              'dueDate': widget.assignment.dueDate,
+                              'courseId': widget.assignment.courseId,
+                              'postedBy': widget.assignment.postedBy,
+                              'postedById': widget.assignment.postedById,
+                              'fileUrl': widget.assignment.fileUrl,
+                              'fileName': widget.assignment.fileName,
+                            },
+                          ),
+                        ),
+                      );
+                      if (shouldRefresh == true) {
+                        setState(() {});
+                      }
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(
+                      value: 'edit',
+                      child: Text('Edit Assignment'),
                     ),
-                    child: Text(
-                      isGraded ? 'GRADED ($score)' : 'NEEDS GRADING',
-                      style: TextStyle(color: isGraded ? Colors.green : Colors.grey.shade700, fontSize: 12, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => StudentSubmissionDetail(
-                          submissionDocId: submission['submissionDocId'],
-                          assignment: assignmentItem,
-                          studentName: submission['studentName'],
-                          isGraded: isGraded,
+                  ],
+                ),
+            ],
+          ),
+          
+          // Use DefaultTabController for tabbed view
+          body: isInstructor
+              ? DefaultTabController(
+                  length: 2,
+                  child: Column(
+                    children: [
+                      // Assignment Details in the top scrollable area
+                      Expanded(
+                        child: TabBarView(
+                          children: [
+                            // 1. Details Tab
+                            assignmentDetails,
+                            // 2. Submissions Tab
+                            _buildInstructorReviewView(widget.assignment.courseId),
+                          ],
                         ),
                       ),
-                    );
-                  },
+                      // Tab Bar fixed at the bottom
+                      Container(
+                        color: primaryColor,
+                        child: const TabBar(
+                          tabs: [
+                            Tab(icon: Icon(Icons.info_outline), text: 'Details'),
+                            Tab(icon: Icon(Icons.group), text: 'Submissions'),
+                          ],
+                          indicatorColor: Colors.white,
+                          labelColor: Colors.white,
+                          unselectedLabelColor: Colors.white70,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              // Student View: Single view
+              : Column(
+                  children: [
+                    // Assignment Details in a fixed height area
+                    SizedBox(
+                      height: MediaQuery.of(context).size.height * 0.4,
+                      child: assignmentDetails,
+                    ),
+                    const Divider(height: 1),
+                    // Submission View in the remaining area
+                    Expanded(
+                      child: _buildStudentSubmissionView(),
+                    ),
+                  ],
                 ),
-              );
-            }).toList(),
-            
-            const SizedBox(height: 20),
-            Text('Not Submitted', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.red.shade700)),
-            const Divider(),
-            if (notSubmittedList.isEmpty && totalStudents > 0)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 10),
-                child: Text('All students have submitted!'),
-              ),
-            ...notSubmittedList.map((student) {
-              return ListTile(
-                leading: Icon(Icons.person_outline, color: Colors.grey),
-                title: Text(student['studentName'], style: const TextStyle(fontStyle: FontStyle.italic, color: Colors.grey)),
-                trailing: const Text('Missing', style: TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.bold)),
-              );
-            }).toList(),
-          ],
         );
       },
     );

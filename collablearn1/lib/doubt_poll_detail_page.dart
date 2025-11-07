@@ -17,12 +17,14 @@ class DoubtPollDetailPage extends StatefulWidget {
   final String pollId;
   final String classId;
   final Map<String, dynamic> initialPollData;
+  final String postedById;
 
   const DoubtPollDetailPage({
     super.key,
     required this.pollId,
     required this.classId,
     required this.initialPollData,
+    required this.postedById,
   });
 
   @override

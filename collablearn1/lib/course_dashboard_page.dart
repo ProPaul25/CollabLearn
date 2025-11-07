@@ -16,7 +16,6 @@ import 'study_groups_view_page.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class CourseDashboardPage extends StatefulWidget {
-  // ... (Constructor is unchanged)
   final String classId;
   final String className;
   final String classCode;
@@ -33,7 +32,6 @@ class CourseDashboardPage extends StatefulWidget {
 }
 
 class _CourseDashboardPageState extends State<CourseDashboardPage> {
-  // ... (All state logic is unchanged)
   int _selectedIndex = 0;
   late final Future<bool> _isInstructorFuture;
 
@@ -60,7 +58,6 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
 
   @override
   Widget build(BuildContext context) {
-    // ... (This build method is unchanged)
     final primaryColor = Theme.of(context).colorScheme.primary;
     return Scaffold(
       appBar: AppBar(
@@ -84,7 +81,7 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
               isInstructor: isInstructor, 
             ),
             StudyMaterialsViewPage(classId: widget.classId), 
-            PeopleViewPage(classId: widget.classId),
+            PeopleViewPage(classId: widget.classId,isInstructor: isInstructor),
             AttendanceManagementPage(classId: widget.classId),
             DoubtPollsViewPage(classId: widget.classId), 
             StudyGroupsViewPage(classId: widget.classId),
@@ -129,7 +126,6 @@ class StreamTab extends StatelessWidget {
     required this.isInstructor, 
   });
 
-  // --- (Function _getUpcomingAssignmentsStream is UPDATED) ---
   Stream<List<AssignmentItem>> _getUpcomingAssignmentsStream(String courseId) {
     
     final DateTime now = DateTime.now();
@@ -141,7 +137,6 @@ class StreamTab extends StatelessWidget {
         .where('courseId', isEqualTo: courseId)
         .where('dueDate', isGreaterThanOrEqualTo: startOfToday) 
         .orderBy('dueDate', descending: false)
-        // .limit(3) // <-- FIX: REMOVED limit(3) to fetch ALL upcoming items
         .snapshots()
         .map((snapshot) {
       return snapshot.docs
@@ -150,7 +145,6 @@ class StreamTab extends StatelessWidget {
     });
   }
 
-  // --- (Functions _getClassFeedStream, _timeAgo are unchanged) ---
   Stream<List<DocumentSnapshot>> _getClassFeedStream(String courseId) {
     return FirebaseFirestore.instance
         .collection('class_feed')
@@ -167,7 +161,6 @@ class StreamTab extends StatelessWidget {
       return '${timestamp.toDate().day}/${timestamp.toDate().month}';
   }
 
-  // --- (URL LAUNCHER HELPER is unchanged) ---
   Future<void> _launchUrl(String url) async {
     if (url.isEmpty) return;
     final uri = Uri.parse(url);
@@ -178,7 +171,6 @@ class StreamTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // ... (Build method UI is unchanged up to the StreamBuilder) ...
     final primaryColor = Theme.of(context).colorScheme.primary;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -228,7 +220,6 @@ class StreamTab extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           
-          // --- (Upcoming Activities StreamBuilder is UPDATED) ---
           StreamBuilder<List<AssignmentItem>>(
             stream: _getUpcomingAssignmentsStream(classId),
             builder: (context, snapshot) {
@@ -243,19 +234,16 @@ class StreamTab extends StatelessWidget {
                 );
               }
               
-              // --- NEW LOGIC: Separate list into visible and hidden ---
               final visibleItems = upcomingItems.take(3).toList();
               final hiddenItems = upcomingItems.length > 3 ? upcomingItems.skip(3).toList() : <AssignmentItem>[];
 
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // 1. Build the always-visible items (first 3)
                   ...visibleItems.map((assignment) {
                     return _buildUpcomingItem(context, assignment);
                   }).toList(),
                   
-                  // 2. Build the dropdown for the rest
                   if (hiddenItems.isNotEmpty)
                     Card(
                       margin: const EdgeInsets.only(bottom: 10),
@@ -269,14 +257,12 @@ class StreamTab extends StatelessWidget {
                         ),
                         leading: Icon(Icons.expand_more, color: primaryColor),
                         children: hiddenItems.map((assignment) {
-                          // Re-use the same item builder
                           return _buildUpcomingItem(context, assignment);
                         }).toList(),
                       ),
                     ),
                 ],
               );
-              // --- END NEW LOGIC ---
             },
           ),
           
@@ -288,7 +274,6 @@ class StreamTab extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           
-          // --- (Recent Posts StreamBuilder is unchanged) ---
           StreamBuilder<List<DocumentSnapshot>>(
             stream: _getClassFeedStream(classId),
             builder: (context, snapshot) {
@@ -331,7 +316,6 @@ class StreamTab extends StatelessWidget {
     );
   }
 
-  // ... (_buildUpcomingItem, _buildAnnouncementFeedCard, _buildDoubtFeedCard, _buildMaterialFeedCard are all unchanged) ...
   Widget _buildUpcomingItem(BuildContext context, AssignmentItem assignment) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     String formattedDueDate() {
@@ -377,7 +361,8 @@ class StreamTab extends StatelessWidget {
       content: data['content'] ?? '',
       postedBy: data['postedBy'] ?? '',
       postedOn: data['lastActivityTimestamp'] ?? Timestamp.now(),
-      courseId: data['courseId'] ?? '',
+      courseId: data['courseId'] ?? '', 
+      postedById: data['postedById'] ?? '',  // FIXED: Added missing postedById argument
     );
     return Card(
       elevation: 2,
@@ -458,7 +443,8 @@ class StreamTab extends StatelessWidget {
                   'postedById': data['postedById'] ?? '',
                   'postedOn': data['postedOn'] as Timestamp? ?? Timestamp.now(),
                   'answersCount': answersCount,
-                },
+                }, 
+                postedById: data['postedById'] ?? '',  // FIXED: Changed from undefined 'poll' to 'data'
               ),
             ),
           );
@@ -499,7 +485,7 @@ class StreamTab extends StatelessWidget {
         ),
         isThreeLine: true,
         onTap: () => _launchUrl(fileUrl), 
-        trailing: Icon(Icons.download_for_offline, color: Colors.grey),
+        trailing: const Icon(Icons.download_for_offline, color: Colors.grey),
       ),
     );
   }

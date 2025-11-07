@@ -1,15 +1,14 @@
-// lib/create_assignment_page.dart - CORRECTED
+// lib/create_assignment_page.dart - CORRECTED AND COMPLETE
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-import 'package:file_picker/file_picker.dart'; // <-- NEW IMPORT
-import 'package:flutter/foundation.dart' show kIsWeb; // <-- NEW IMPORT
-// <-- NEW IMPORT
-import 'package:cloudinary_public/cloudinary_public.dart'; // <-- NEW IMPORT
+import 'package:file_picker/file_picker.dart'; 
+import 'package:cloudinary_public/cloudinary_public.dart'; 
 
-// --- NEW: CLOUDINARY INSTANCE ---
+// --- CLOUDINARY INSTANCE ---
+// NOTE: Ensure these constants match your actual Cloudinary setup.
 const String _CLOUD_NAME = 'dc51dx2da'; 
 const String _UPLOAD_PRESET = 'CollabLearn'; 
 
@@ -22,10 +21,15 @@ final CloudinaryPublic cloudinary = CloudinaryPublic(
 
 class CreateAssignmentPage extends StatefulWidget {
   final String classId;
+  // NEW: Optional fields for editing
+  final Map<String, dynamic>? assignmentData;
+  final String? assignmentId;
 
   const CreateAssignmentPage({
     super.key,
     required this.classId,
+    this.assignmentData,
+    this.assignmentId,
   });
 
   @override
@@ -38,13 +42,41 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
   final _descriptionController = TextEditingController();
   final _pointsController = TextEditingController();
 
+  // FIX: These state variables must be defined here to resolve "Undefined name" errors.
   DateTime? _selectedDueDate;
-  bool _isLoading = false;
+  TimeOfDay? _selectedDueTime;
   
-  // --- NEW STATE FOR FILE UPLOAD ---
+  // File upload state
   PlatformFile? _pickedFile;
+  String? _uploadedFileUrl;
+  String? _uploadedFileName;
+
+  bool _isLoading = false;
   double _uploadProgress = 0;
-  // ---------------------------------
+  late bool _isEditing;
+
+  @override
+  void initState() {
+    super.initState();
+    _isEditing = widget.assignmentData != null && widget.assignmentId != null;
+    
+    // Initialize fields if editing an existing assignment
+    if (_isEditing) {
+      final data = widget.assignmentData!;
+      _titleController.text = data['title'] ?? '';
+      _descriptionController.text = data['description'] ?? '';
+      _pointsController.text = (data['points'] ?? 0).toString();
+      
+      _uploadedFileUrl = data['fileUrl'];
+      _uploadedFileName = data['fileName'];
+
+      if (data['dueDate'] is Timestamp) {
+        final date = (data['dueDate'] as Timestamp).toDate();
+        _selectedDueDate = date;
+        _selectedDueTime = TimeOfDay.fromDateTime(date);
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -55,7 +87,6 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
   }
 
   Future<String> _getCurrentUserName() async {
-    // ... (This function is unchanged)
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
@@ -67,300 +98,393 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
     }
     return 'Instructor';
   }
+  
+  // --- File Picker Logic ---
+  Future<void> _pickFile() async {
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.any,
+    );
 
-  Future<void> _selectDueDate(BuildContext context) async {
-    // ... (This function is unchanged)
+    if (result != null) {
+      setState(() {
+        _pickedFile = result.files.first;
+        // Reset previously uploaded URL/Name if a new file is picked
+        _uploadedFileUrl = null;
+        _uploadedFileName = null;
+      });
+    }
+  }
+  
+  // --- Cloudinary Upload Logic ---
+  Future<String?> _uploadFileToCloudinary(PlatformFile file) async {
+    if (file.bytes == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error: File bytes are null.')),
+      );
+      return null;
+    }
+
+    try {
+      // FIXED: Use correct CloudinaryResourceType enum values
+      final CloudinaryResourceType resourceType = file.extension == 'pdf' 
+          ? CloudinaryResourceType.Auto
+          : CloudinaryResourceType.Raw;
+
+      final bytes = _pickedFile!.bytes!;      
+
+      // FIXED: Use fromBytesData instead of fromBytes
+      final response = await cloudinary.uploadFile(
+        CloudinaryFile.fromBytesData(
+          bytes,
+          resourceType: resourceType,
+          folder: 'collab-learn/assignments/${widget.classId}',
+          identifier: _pickedFile!.name,
+        ),
+        onProgress: (count, total) {
+          if (mounted) {
+            setState(() {
+              _uploadProgress = count / total;
+            });
+          }
+        },
+      );
+      return response.secureUrl;
+    } on CloudinaryException catch (e) {
+      debugPrint('Cloudinary upload error: ${e.message}');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('File upload failed: ${e.message}')),
+        );
+      }
+      return null;
+    } catch (e) {
+      debugPrint('General upload error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('An unexpected error occurred during file upload: $e')),
+        );
+      }
+      return null;
+    }
+  }
+
+  // --- Date Picker Logic ---
+  Future<void> _selectDate(BuildContext context) async {
     final DateTime? pickedDate = await showDatePicker(
       context: context,
-      initialDate: _selectedDueDate ?? DateTime.now().add(const Duration(days: 7)),
+      initialDate: _selectedDueDate ?? DateTime.now(),
       firstDate: DateTime.now(),
-      lastDate: DateTime(2030),
+      lastDate: DateTime(2101),
     );
-    if (pickedDate != null) {
-      final TimeOfDay? pickedTime = await showTimePicker(
-        context: context,
-        initialTime: TimeOfDay.fromDateTime(_selectedDueDate ?? pickedDate),
+    if (pickedDate != null && pickedDate != _selectedDueDate) {
+      setState(() {
+        _selectedDueDate = pickedDate;
+      });
+    }
+  }
+
+  // --- Time Picker Logic ---
+  Future<void> _selectTime(BuildContext context) async {
+    final TimeOfDay? pickedTime = await showTimePicker(
+      context: context,
+      initialTime: _selectedDueTime ?? TimeOfDay.now(),
+    );
+    if (pickedTime != null && pickedTime != _selectedDueTime) {
+      setState(() {
+        _selectedDueTime = pickedTime;
+      });
+    }
+  }
+
+  // --- Main Post/Edit Logic ---
+  Future<void> _postAssignment() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (_selectedDueDate == null || _selectedDueTime == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a due date and time.')),
       );
-      if (pickedTime != null) {
-        setState(() {
-          _selectedDueDate = DateTime(
-            pickedDate.year,
-            pickedDate.month,
-            pickedDate.day,
-            pickedTime.hour,
-            pickedTime.minute,
+      return;
+    }
+    if (_isLoading) return;
+
+    setState(() {
+      _isLoading = true;
+      _uploadProgress = 0;
+    });
+    
+    String? fileUrl = _uploadedFileUrl;
+    String fileName = _uploadedFileName ?? '';
+    
+    // 1. Handle file upload if a new file was picked
+    if (_pickedFile != null) {
+      fileUrl = await _uploadFileToCloudinary(_pickedFile!);
+      fileName = _pickedFile!.name;
+      if (fileUrl == null) {
+        // Stop if upload failed
+        setState(() { _isLoading = false; });
+        return;
+      }
+    } else if (_uploadedFileUrl == null && _uploadedFileName == null) {
+      // If no file was ever picked or existing one was removed
+      fileUrl = '';
+      fileName = '';
+    }
+
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      final userName = await _getCurrentUserName();
+      final collection = FirebaseFirestore.instance.collection('assignments');
+      
+      final DateTime finalDueDate = _selectedDueDate!.add(
+        Duration(hours: _selectedDueTime!.hour, minutes: _selectedDueTime!.minute),
+      );
+
+      final data = {
+        'courseId': widget.classId,
+        'title': _titleController.text,
+        'description': _descriptionController.text,
+        'points': int.tryParse(_pointsController.text) ?? 0,
+        'dueDate': Timestamp.fromDate(finalDueDate),
+        'fileUrl': fileUrl,
+        'fileName': fileName,
+        'postedBy': userName,
+        'postedById': user!.uid,
+      };
+
+      if (_isEditing && widget.assignmentId != null) {
+        // --- EDIT LOGIC ---
+        await collection.doc(widget.assignmentId).update({
+          ...data, 
+          'lastUpdatedOn': FieldValue.serverTimestamp(),
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Assignment successfully updated!')),
           );
+        }
+      } else {
+        // --- CREATE LOGIC ---
+        await collection.add({
+          ...data,
+          'postedOn': FieldValue.serverTimestamp(),
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Assignment successfully published!')),
+          );
+        }
+      }
+
+      if (mounted) {
+        // Pop with 'true' to signal the calling page (detail page) to refresh
+        Navigator.pop(context, true); 
+      }
+    } catch (e) {
+      debugPrint('Error posting/updating assignment: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to post/update assignment: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _uploadProgress = 0;
         });
       }
     }
   }
 
-  // --- NEW: FILE PICKER FUNCTION ---
-  Future<void> _pickFile() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['pdf', 'pptx', 'docx', 'zip', 'jpg', 'png', 'doc', 'txt'],
-    );
-    if (result != null) {
-      setState(() {
-        _pickedFile = result.files.first;
-      });
-    }
-  }
-  // ---------------------------------
-
-  // --- UPDATED: Handles assignment posting AND optional file upload ---
-  Future<void> _postAssignment() async {
-    if (!_formKey.currentState!.validate()) return;
-    if (_selectedDueDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a due date.'), backgroundColor: Colors.orange),
-      );
-      return;
-    }
-
-    setState(() {
-       _isLoading = true;
-       _uploadProgress = 0;
-    });
-
-    try {
-      final userName = await _getCurrentUserName();
-      final points = int.tryParse(_pointsController.text.trim()) ?? 0;
-      
-      String? downloadUrl;
-      String? cloudinaryPublicId;
-      String? fileName;
-
-      // --- NEW: UPLOAD FILE IF ONE IS PICKED ---
-      if (_pickedFile != null) {
-        CloudinaryResourceType resourceType = CloudinaryResourceType.Raw;
-        if (['jpg', 'png'].contains(_pickedFile!.extension)) {
-            resourceType = CloudinaryResourceType.Image;
-        }
-        
-        CloudinaryFile fileToUpload;
-        if (kIsWeb) {
-          if (_pickedFile!.bytes == null) throw Exception("File bytes missing for web upload.");
-          fileToUpload = CloudinaryFile.fromByteData(
-            _pickedFile!.bytes!.buffer.asByteData(), 
-            resourceType: resourceType,
-            folder: 'collablearn/assignments/${widget.classId}',
-            identifier: _pickedFile!.name, 
-          );
-        } else {
-          if (_pickedFile!.path == null) throw Exception("File path missing for mobile upload.");
-          fileToUpload = CloudinaryFile.fromFile(
-            _pickedFile!.path!, 
-            resourceType: resourceType,
-            folder: 'collablearn/assignments/${widget.classId}',
-          );
-        }
-
-        final CloudinaryResponse response = await cloudinary.uploadFile(
-          fileToUpload,
-          onProgress: (count, total) {
-            if (mounted) {
-              setState(() {
-                _uploadProgress = count / total;
-              });
-            }
-          },
-        );
-        
-        if (response.secureUrl.isEmpty) {
-            throw Exception("Cloudinary upload failed to return a secure URL.");
-        }
-        
-        downloadUrl = response.secureUrl;
-        cloudinaryPublicId = response.publicId;
-        fileName = _pickedFile!.name;
-      }
-      // --- END OF FILE UPLOAD ---
-
-      // Save all data to Firestore
-      await FirebaseFirestore.instance.collection('assignments').add({
-        'title': _titleController.text.trim(),
-        'description': _descriptionController.text.trim(),
-        'courseId': widget.classId,
-        'points': points,
-        'dueDate': Timestamp.fromDate(_selectedDueDate!),
-        'postedBy': userName,
-        'postedById': FirebaseAuth.instance.currentUser!.uid,
-        'postedOn': Timestamp.now(),
-        'type': 'assignment',
-        // Add file data (will be null if no file was attached)
-        'fileUrl': downloadUrl,
-        'cloudinaryPublicId': cloudinaryPublicId,
-        'fileName': fileName,
-      });
-
-      if (mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Assignment created successfully!')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to create assignment: $e'), backgroundColor: Colors.red),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
+  // --- Helper to format date/time for display ---
+  String _formatDateTime(DateTime date, TimeOfDay time) {
+    final DateTime combined = date.add(Duration(hours: time.hour, minutes: time.minute));
+    return DateFormat('MMM d, yyyy @ h:mm a').format(combined);
   }
 
   @override
   Widget build(BuildContext context) {
-    // ... (rest of build method is unchanged until the attachment part)
     final primaryColor = Theme.of(context).colorScheme.primary;
-    final formattedDueDate = _selectedDueDate == null
-        ? 'No Due Date Selected'
-        : DateFormat('MMM dd, yyyy HH:mm').format(_selectedDueDate!);
-
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Create New Assignment'),
+        title: Text(_isEditing ? 'Edit Assignment' : 'Create Assignment'),
         backgroundColor: primaryColor,
         foregroundColor: Colors.white,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              // Title Field
-              TextFormField(
-                controller: _titleController,
-                decoration: const InputDecoration(
-                  labelText: 'Assignment Title',
-                  prefixIcon: Icon(Icons.assignment),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
-                ),
-                validator: (value) => value!.isEmpty ? 'Title is required' : null,
-              ),
-              const SizedBox(height: 20),
-
-              // Description Field
-              TextFormField(
-                controller: _descriptionController,
-                maxLines: 6,
-                decoration: const InputDecoration(
-                  labelText: 'Instructions/Description',
-                  alignLabelWithHint: true,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
-                ),
-                validator: (value) => value!.isEmpty ? 'Instructions are required' : null,
-              ),
-              const SizedBox(height: 20),
-
-              // Points and Due Date Row
-              Row(
-                // ... (This row is unchanged)
-                children: [
-                  Expanded(
-                    flex: 1,
-                    child: TextFormField(
-                      controller: _pointsController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Max Points',
-                        prefixIcon: Icon(Icons.score),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.isEmpty) return 'Points needed';
-                        if (int.tryParse(value) == null || (int.tryParse(value) ?? 0) <= 0) return 'Must be positive number';
-                        return null;
-                      },
-                    ),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 1. Title
+                TextFormField(
+                  controller: _titleController,
+                  decoration: const InputDecoration(
+                    labelText: 'Assignment Title',
+                    hintText: 'e.g., Weekly Project 1',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
                   ),
-                  const SizedBox(width: 15),
-                  Expanded(
-                    flex: 2,
-                    child: InkWell(
-                      onTap: _isLoading ? null : () => _selectDueDate(context),
-                      child: InputDecorator(
-                        decoration: const InputDecoration(
-                          labelText: 'Due Date',
-                          prefixIcon: Icon(Icons.calendar_today),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
-                        ),
-                        child: Text(
-                          formattedDueDate,
-                          style: TextStyle(color: _selectedDueDate == null ? Colors.grey : primaryColor, fontWeight: FontWeight.w500),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 30),
-
-              // --- NEW: ATTACHMENT SECTION ---
-              const Text(
-                'Attach File (Optional)',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-              ),
-              const SizedBox(height: 10),
-              ElevatedButton.icon(
-                onPressed: _isLoading ? null : _pickFile,
-                icon: const Icon(Icons.attach_file),
-                label: Text(_pickedFile == null ? 'Select File' : 'Change File'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.grey.shade700,
-                  foregroundColor: Colors.white,
+                  validator: (value) => value!.isEmpty ? 'Title is required' : null,
                 ),
-              ),
-              if (_pickedFile != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 10.0),
-                  child: Row(
-                    children: [
-                      Icon(Icons.check_circle, color: Colors.green),
-                      const SizedBox(width: 8),
-                      Expanded(child: Text(_pickedFile!.name, overflow: TextOverflow.ellipsis)),
-                    ],
+                const SizedBox(height: 20),
+                
+                // 2. Description
+                TextFormField(
+                  controller: _descriptionController,
+                  maxLines: 5,
+                  decoration: const InputDecoration(
+                    labelText: 'Description',
+                    hintText: 'Provide details, instructions, and requirements.',
+                    alignLabelWithHint: true,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
                   ),
+                  validator: (value) => value!.isEmpty ? 'Description is required' : null,
                 ),
-              // --- END ATTACHMENT SECTION ---
+                const SizedBox(height: 20),
+                
+                // 3. Points
+                TextFormField(
+                  controller: _pointsController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Points',
+                    hintText: 'e.g., 100',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
+                  ),
+                  validator: (value) {
+                    if (value!.isEmpty) return 'Points are required';
+                    if (int.tryParse(value) == null) return 'Must be a valid number';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 20),
 
-              const SizedBox(height: 30),
-              
-              // --- NEW: UPLOAD PROGRESS BAR ---
-              if (_isLoading)
-                Column(
+                // 4. Due Date & Time Pickers
+                Row(
                   children: [
-                    LinearProgressIndicator(value: _uploadProgress.clamp(0.0, 1.0), color: primaryColor),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8.0, bottom: 20.0),
-                      child: Text('${(_uploadProgress * 100).toStringAsFixed(0)}% Uploading...'),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.calendar_today),
+                        label: Text(
+                          _selectedDueDate == null
+                              ? 'Select Due Date'
+                              : DateFormat('MMM d, yyyy').format(_selectedDueDate!),
+                        ),
+                        onPressed: () => _selectDate(context),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.access_time),
+                        label: Text(
+                          _selectedDueTime == null
+                              ? 'Select Due Time'
+                              : _selectedDueTime!.format(context),
+                        ),
+                        onPressed: () => _selectTime(context),
+                      ),
                     ),
                   ],
                 ),
+                if (_selectedDueDate != null && _selectedDueTime != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Text(
+                      'Due: ${_formatDateTime(_selectedDueDate!, _selectedDueTime!)}',
+                      style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                const SizedBox(height: 20),
 
-              // Submit Button
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: _isLoading ? null : _postAssignment,
-                  icon: _isLoading
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : const Icon(Icons.publish),
-                  label: Text(_isLoading ? 'Publishing...' : 'Publish Assignment'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: primaryColor,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 18),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                // 5. File Attachment
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _pickFile,
+                        icon: const Icon(Icons.attach_file),
+                        label: const Text('Attach File (Optional)'),
+                      ),
+                    ),
+                  ],
+                ),
+                if (_pickedFile != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Row(
+                      children: [
+                        Icon(Icons.insert_drive_file, color: primaryColor),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text(_pickedFile!.name, overflow: TextOverflow.ellipsis)),
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 18),
+                          onPressed: () => setState(() { 
+                            _pickedFile = null; 
+                            _uploadedFileUrl = null; 
+                            _uploadedFileName = null; 
+                          }),
+                        ),
+                      ],
+                    ),
+                  )
+                else if (_uploadedFileUrl != null && _uploadedFileName!.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.insert_drive_file, color: Colors.green),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text('Existing File: $_uploadedFileName', overflow: TextOverflow.ellipsis)),
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 18),
+                          onPressed: () => setState(() { 
+                            _uploadedFileUrl = null; 
+                            _uploadedFileName = null; 
+                          }),
+                        ),
+                      ],
+                    ),
+                  ),
+           
+                const SizedBox(height: 40),
+
+                // --- UPLOAD PROGRESS BAR ---
+                if (_isLoading)
+                  Column(
+                    children: [
+                      LinearProgressIndicator(value: _uploadProgress.clamp(0.0, 1.0), color: primaryColor),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8.0, bottom: 20.0),
+                        child: Text('${(_uploadProgress * 100).toStringAsFixed(0)}% Uploading...'),
+                      ),
+                    ],
+                  ),
+
+                // 6. Submit Button
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _isLoading ? null : _postAssignment,
+                    icon: _isLoading
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                        : Icon(_isEditing ? Icons.save : Icons.publish),
+                    label: Text(_isLoading 
+                        ? 'Saving...' 
+                        : (_isEditing ? 'Save Changes' : 'Publish Assignment')),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryColor,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 18),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

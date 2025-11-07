@@ -23,6 +23,7 @@ class Assignment {
   final String courseId;
   final String? fileUrl; 
   final String? fileName; 
+  final String postedById;
 
   Assignment({
     required this.id,
@@ -34,6 +35,7 @@ class Assignment {
     required this.courseId,
     this.fileUrl, 
     this.fileName,
+    required this.postedById,
   });
 }
 
@@ -128,6 +130,7 @@ class AssignmentItem {
   final String? fileUrl;   
   final String? fileName;  
   final String type = 'assignment'; // ADDED FIELD
+  final String postedById;
 
   AssignmentItem({
     required this.id,
@@ -139,6 +142,7 @@ class AssignmentItem {
     required this.courseId,
     this.fileUrl, 
     this.fileName, 
+    required this.postedById,
   });
 
   factory AssignmentItem.fromFirestore(DocumentSnapshot doc) {
@@ -154,6 +158,7 @@ class AssignmentItem {
       courseId: data['courseId'] ?? '',
       fileUrl: data['fileUrl'] as String?,   
       fileName: data['fileName'] as String?, 
+      postedById: data['postedById'] ?? '',
     );
   }
  
@@ -169,7 +174,8 @@ class AssignmentItem {
       postedBy: postedBy,
       courseId: courseId,
       fileUrl: fileUrl,   
-      fileName: fileName, 
+      fileName: fileName,
+      postedById: postedById, 
     );
   }
 }

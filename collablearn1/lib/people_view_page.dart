@@ -5,14 +5,17 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 // NOTE: Ensure these two files exist and contain the navigation logic
 import 'add_co_instructor_page.dart'; 
-import 'add_student_page.dart'; 
+import 'add_student_page.dart';
+import 'student_management_detail_page.dart'; 
 
 class PeopleViewPage extends StatefulWidget {
   final String classId;
+  final bool isInstructor;
 
   const PeopleViewPage({
     super.key,
     required this.classId,
+    required this.isInstructor,
   });
 
   @override
@@ -139,7 +142,7 @@ class _PeopleViewPageState extends State<PeopleViewPage> {
                       style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: primaryColor),
                     ),
                     const Divider(),
-                    _buildUserTile(context, instructorName, instructorEmail, Icons.school),
+                    _buildUserTile(context, instructorName, instructorEmail, Icons.school,'', false,),
                     
                     // 1. ADD CO-TEACHER BUTTON (Bottom of Teacher's Section)
                     if (isInstructor)
@@ -173,8 +176,9 @@ class _PeopleViewPageState extends State<PeopleViewPage> {
                     ...students.map((student) {
                       final String studentName = _getUserName(student);
                       final String studentEmail = student['email']?.toString() ?? 'N/A';
+                      final String studentUid = student['uid']?.toString() ?? ''; // Get the UID
                       
-                      return _buildUserTile(context, studentName, studentEmail, Icons.person);
+                      return _buildUserTile(context, studentName, studentEmail, Icons.person, studentUid,widget.isInstructor,);
                     }).toList(),
 
                     // 2. ADD STUDENT BUTTON (Bottom of Student's Section)
@@ -204,20 +208,36 @@ class _PeopleViewPageState extends State<PeopleViewPage> {
     );
   }
   
-  Widget _buildUserTile(BuildContext context, String name, String email, IconData icon) {
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      elevation: 1,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-          child: Icon(icon, color: Theme.of(context).colorScheme.primary),
-        ),
-        title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: Text(email),
-        onTap: () {},
+  Widget _buildUserTile(BuildContext context, String name, String email, IconData icon, String uid, bool isInstructor) {
+    final primaryColor = Theme.of(context).colorScheme.primary;
+
+  return Card(
+    margin: const EdgeInsets.symmetric(vertical: 8),
+    elevation: 1,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    child: ListTile(
+      leading: CircleAvatar(
+        backgroundColor: primaryColor.withAlpha(25),
+        child: Icon(icon, color: primaryColor),
       ),
-    );
-  }
+      title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: Text(email),
+      // --- ADD NAVIGATION LOGIC ---
+      onTap: isInstructor && uid.isNotEmpty ? () {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => StudentManagementDetailPage(
+              classId: widget.classId,
+              studentId: uid,
+              studentName: name,
+              isInstructor: isInstructor,
+            ),
+          ),
+        );
+      } : null, // Not clickable if not instructor
+      // ----------------------------
+      trailing: isInstructor ? const Icon(Icons.arrow_forward_ios, size: 16) : null,
+    ),
+  );
+}
 }

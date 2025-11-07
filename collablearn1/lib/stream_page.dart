@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'announcement_detail_page.dart'; 
 
 // --- DATA MODEL (Unchanged) ---
+// --- DATA MODEL (MODIFIED) ---
 class Announcement {
   final String id;
   final String title;
@@ -13,6 +14,7 @@ class Announcement {
   final String postedBy;
   final Timestamp postedOn;
   final String courseId;
+  final String postedById; // <--- ADDED FIELD
 
   Announcement({
     required this.id,
@@ -21,6 +23,7 @@ class Announcement {
     required this.postedBy,
     required this.postedOn,
     required this.courseId,
+    required this.postedById, // <--- ADDED FIELD
   });
   
   factory Announcement.fromFirestore(DocumentSnapshot doc) {
@@ -33,6 +36,7 @@ class Announcement {
       postedBy: data['postedBy'] ?? 'Unknown User',
       postedOn: data['postedOn'] ?? Timestamp.now(),
       courseId: data['courseId'] ?? '',
+      postedById: data['postedById'] ?? '', // <--- MAPPED
     );
   }
 }

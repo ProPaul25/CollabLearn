@@ -182,7 +182,8 @@ class DoubtPollsViewPage extends StatelessWidget {
                   'postedById': poll.postedById,
                   'postedOn': poll.postedOn,
                   'answersCount': poll.answersCount,
-                },
+                }, 
+                postedById: '',
               ),
             ),
           );
