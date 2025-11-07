@@ -1,4 +1,4 @@
-// lib/group_settings_page.dart
+// lib/group_settings_page.dart - FIX FOR DISABLED 'Add Selected' BUTTON
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -103,7 +103,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
   Future<List<Map<String, dynamic>>> _getAvailableRoster(List<String> currentMembers) async {
     final classDoc = await FirebaseFirestore.instance.collection('classes').doc(widget.classId).get();
     
-    // --- FIX: Defensive null check on classDoc.data() and fallback to empty list ---
+    // --- Defensive null check on classDoc.data() and fallback to empty list ---
     final classData = classDoc.data();
     final studentIds = List<String>.from(classData?['studentIds'] ?? []);
     final instructorId = classData?['instructorId'] as String?;
@@ -122,11 +122,12 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
     if (uidsToFetch.isEmpty) return [];
 
     // Use batch fetching to circumvent the 10-item 'whereIn' limit
-    return _fetchUsersDataInBatches(uidsToFetch);
+    return _fetchUsersDataInBatches(uidsToFetch, instructorId); // Pass instructorId
   }
 
-  // New helper function to fetch user data in batches (max 10 per query)
-  Future<List<Map<String, dynamic>>> _fetchUsersDataInBatches(List<String> uids) async {
+  // Helper function to fetch user data in batches (max 10 per query)
+  // FIX: Added instructorId to properly set 'isInstructor' for the CheckboxListTile
+  Future<List<Map<String, dynamic>>> _fetchUsersDataInBatches(List<String> uids, String? instructorId) async {
     const batchSize = 10;
     final List<Map<String, dynamic>> allUsers = [];
 
@@ -140,11 +141,21 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
       
       for (var doc in snapshot.docs) {
         final data = doc.data();
-        // --- FIX: Check for empty/missing document data immediately ---
+        // Check for empty/missing document data immediately
         if (data.isEmpty) continue; 
         
         final name = "${data['firstName'] ?? ''} ${data['lastName'] ?? ''}".trim();
-        allUsers.add({...data, 'uid': doc.id, 'name': name.isEmpty ? (data['email'] ?? 'User') : name});
+        
+        // FIX for "type 'Null' is not a 'bool'" error
+        // Ensure 'isInstructor' is explicitly set to a boolean
+        final bool isInstructor = doc.id == instructorId; 
+        
+        allUsers.add({
+          ...data, 
+          'uid': doc.id, 
+          'name': name.isEmpty ? (data['email'] ?? 'User') : name,
+          'isInstructor': isInstructor, // Now guaranteed to be a bool
+        });
       }
     }
     return allUsers;
@@ -175,35 +186,36 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
     await showDialog(
       context: context,
       builder: (context) {
-        // --- FIX: selectedUids is defined here ---
+        // --- selectedUids is defined here, managed by the StatefulBuilder ---
         List<String> selectedUids = []; 
         
-        return AlertDialog(
-          title: const Text('Add New Members'),
-          content: roster.isEmpty
-            ? const Text('No other members available to add to this group.')
-            : SizedBox(
-                width: double.maxFinite,
-                child: StatefulBuilder(
-                  builder: (context, setDialogState) {
-                    return ListView.builder(
+        // FIX: Wrap the entire AlertDialog content/actions in a single StatefulBuilder
+        // This ensures the button's `onPressed` logic is rebuilt when checkboxes change.
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Add New Members'),
+              content: roster.isEmpty
+                ? const Text('No other members available to add to this group.')
+                : SizedBox(
+                    width: double.maxFinite,
+                    child: ListView.builder(
                       shrinkWrap: true,
                       itemCount: roster.length,
                       itemBuilder: (context, index) {
                         final member = roster[index];
                         final memberUid = member['uid']; 
                         
-                        // Added explicit null check for safety against "type 'Null' is not a 'bool'"
                         if (memberUid == null) return const SizedBox.shrink();
 
                         final isSelected = selectedUids.contains(memberUid);
                         return CheckboxListTile(
                           title: Text(member['name']),
-                          subtitle: Text(member['isInstructor'] ? 'Instructor' : 'Student'),
+                          // Now safe because 'isInstructor' is guaranteed a bool in _fetchUsersDataInBatches
+                          subtitle: Text(member['isInstructor'] == true ? 'Instructor' : 'Student'), 
                           value: isSelected,
-                          // --- FIX: This setDialogState updates the UI state correctly ---
                           onChanged: (bool? value) {
-                            setDialogState(() {
+                            setDialogState(() { // <-- Use setDialogState to rebuild the AlertDialog
                               if (value == true) {
                                 selectedUids.add(memberUid);
                               } else {
@@ -213,21 +225,25 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
                           },
                         );
                       },
-                    );
+                    ),
+                  ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+                // FIX APPLIED HERE: onPressed now correctly re-evaluates `selectedUids.isEmpty`
+                ElevatedButton(
+                  onPressed: selectedUids.isEmpty ? null : () { 
+                    _addMembers(selectedUids);
+                    Navigator.pop(context);
                   },
+                  child: const Text('Add Selected'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.primary, 
+                    foregroundColor: Colors.white,
+                  ),
                 ),
-              ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-            // The button relies on the selectedUids list state managed by the parent StatefulBuilder
-            ElevatedButton(
-              onPressed: selectedUids.isEmpty ? null : () { 
-                _addMembers(selectedUids);
-                Navigator.pop(context);
-              },
-              child: const Text('Add Selected'),
-            ),
-          ],
+              ],
+            );
+          }, // End of StatefulBuilder
         );
       },
     );
@@ -273,6 +289,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
       }
     } catch (e) {
       if (mounted) {
+        // This is where the permission error was showing
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to remove member: $e'), backgroundColor: Colors.red),
         );
@@ -353,59 +370,68 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
                 final memberUids = List<String>.from(data?['memberUids'] ?? []);
                 final creatorId = data?['createdBy'] as String?;
 
-                return FutureBuilder<List<Map<String, dynamic>>>(
-                  future: _fetchUsersDataInBatches(memberUids),
-                  builder: (context, userSnapshot) {
-                    if (userSnapshot.connectionState == ConnectionState.waiting) {
-                      return const SizedBox(height: 50, child: Center(child: CircularProgressIndicator()));
-                    }
-                    final members = userSnapshot.data ?? [];
-                    
-                    // Separate the creator
-                    final otherMembers = members.where((m) => m['uid'] != creatorId).toList();
-                    final creator = members.firstWhere((m) => m['uid'] == creatorId, orElse: () => {'name': 'Unknown Admin', 'uid': ''});
+                // Pass instructorId to FutureBuilder
+                return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                  future: FirebaseFirestore.instance.collection('classes').doc(widget.classId).get(),
+                  builder: (context, classSnapshot) {
+                    final classData = classSnapshot.data?.data();
+                    final instructorId = classData?['instructorId'] as String?;
 
-
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Add Member Button
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton.icon(
-                            onPressed: () => _showAddMemberDialog(memberUids),
-                            icon: const Icon(Icons.person_add),
-                            label: const Text('Add Members'),
-                          ),
-                        ),
+                    return FutureBuilder<List<Map<String, dynamic>>>(
+                      future: _fetchUsersDataInBatches(memberUids, instructorId),
+                      builder: (context, userSnapshot) {
+                        if (userSnapshot.connectionState == ConnectionState.waiting) {
+                          return const SizedBox(height: 50, child: Center(child: CircularProgressIndicator()));
+                        }
+                        final members = userSnapshot.data ?? [];
                         
-                        // Admin/Creator
-                        ListTile(
-                          leading: const Icon(Icons.star, color: Colors.amber),
-                          title: Text(creator['name'] ?? 'Admin'),
-                          subtitle: const Text('Group Admin'),
-                          trailing: const Text('(You)'),
-                        ),
-                        const Divider(height: 1, indent: 16, endIndent: 16),
+                        // Separate the creator
+                        final otherMembers = members.where((m) => m['uid'] != creatorId).toList();
+                        final creator = members.firstWhere((m) => m['uid'] == creatorId, orElse: () => {'name': 'Unknown Admin', 'uid': ''});
 
-                        // Other Members
-                        ...otherMembers.map((member) {
-                          return ListTile(
-                            leading: const Icon(Icons.person),
-                            title: Text(member['name'] ?? 'Member'),
-                            trailing: IconButton(
-                              icon: const Icon(Icons.remove_circle, color: Colors.red),
-                              onPressed: () => _removeMember(member['uid'], member['name']),
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Add Member Button
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton.icon(
+                                onPressed: () => _showAddMemberDialog(memberUids),
+                                icon: const Icon(Icons.person_add),
+                                label: const Text('Add Members'),
+                              ),
                             ),
-                          );
-                        }).toList(),
+                            
+                            // Admin/Creator
+                            ListTile(
+                              leading: const Icon(Icons.star, color: Colors.amber),
+                              title: Text(creator['name'] ?? 'Admin'),
+                              subtitle: const Text('Group Admin'),
+                              trailing: const Text('(You)'),
+                            ),
+                            const Divider(height: 1, indent: 16, endIndent: 16),
 
-                        if (members.length <= 1)
-                          const Padding(
-                            padding: EdgeInsets.all(8.0),
-                            child: Text('No other members yet.'),
-                          ),
-                      ],
+                            // Other Members
+                            ...otherMembers.map((member) {
+                              return ListTile(
+                                leading: const Icon(Icons.person),
+                                title: Text(member['name'] ?? 'Member'),
+                                trailing: IconButton(
+                                  icon: const Icon(Icons.remove_circle, color: Colors.red),
+                                  onPressed: () => _removeMember(member['uid'] as String, member['name'] as String),
+                                ),
+                              );
+                            }).toList(),
+
+                            if (members.length <= 1)
+                              const Padding(
+                                padding: EdgeInsets.all(8.0),
+                                child: Text('No other members yet.'),
+                              ),
+                          ],
+                        );
+                      },
                     );
                   },
                 );
