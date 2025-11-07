@@ -1,4 +1,4 @@
-// lib/create_announcement_page.dart - CORRECTED FOR ANNOUNCEMENT EDIT/CREATE
+// lib/create_announcement_page.dart - CORRECTED WITH CLASS FEED UPDATE
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -6,15 +6,14 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 class CreateAnnouncementPage extends StatefulWidget {
   final String classId;
-  // NEW: Optional fields for editing
   final Map<String, dynamic>? announcementData;
   final String? announcementId; 
 
   const CreateAnnouncementPage({
     super.key,
     required this.classId,
-    this.announcementData, // <--- Correctly defined parameter
-    this.announcementId,   // <--- Correctly defined parameter
+    this.announcementData,
+    this.announcementId,
   });
 
   @override
@@ -33,7 +32,6 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
     super.initState();
     _isEditing = widget.announcementData != null && widget.announcementId != null;
     
-    // If editing, populate the controllers
     if (_isEditing) {
       _titleController.text = widget.announcementData!['title'] ?? '';
       _contentController.text = widget.announcementData!['content'] ?? '';
@@ -72,8 +70,6 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
       final user = FirebaseAuth.instance.currentUser;
       final userName = await _getCurrentUserName();
       final collection = FirebaseFirestore.instance.collection('announcements');
-      final bool isEditing = widget.announcementId != null;
-      final String announcementId = widget.announcementId ?? '';
       
       final data = {
         'courseId': widget.classId,
@@ -83,12 +79,32 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
         'postedById': user!.uid,
       };
 
-      if (_isEditing) {
+      String announcementId;
+
+      if (_isEditing && widget.announcementId != null) {
         // --- EDIT LOGIC ---
-        await collection.doc(widget.announcementId).update({
+        announcementId = widget.announcementId!;
+        await collection.doc(announcementId).update({
           ...data, 
           'lastUpdatedOn': FieldValue.serverTimestamp(),
         });
+        
+        // Update the class_feed entry
+        final feedQuery = await FirebaseFirestore.instance
+            .collection('class_feed')
+            .where('announcementId', isEqualTo: announcementId)
+            .where('courseId', isEqualTo: widget.classId)
+            .limit(1)
+            .get();
+        
+        if (feedQuery.docs.isNotEmpty) {
+          await feedQuery.docs.first.reference.update({
+            'title': _titleController.text,
+            'content': _contentController.text,
+            'lastActivityTimestamp': FieldValue.serverTimestamp(),
+          });
+        }
+        
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Announcement successfully updated!')),
@@ -96,10 +112,25 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
         }
       } else {
         // --- CREATE LOGIC ---
-        await collection.add({
+        final docRef = await collection.add({
           ...data,
           'postedOn': FieldValue.serverTimestamp(),
         });
+        
+        announcementId = docRef.id;
+        
+        // Create class_feed entry with the announcement ID
+        await FirebaseFirestore.instance.collection('class_feed').add({
+          'type': 'announcement',
+          'announcementId': announcementId,  // CRITICAL: Store the announcement ID
+          'courseId': widget.classId,
+          'title': _titleController.text,
+          'content': _contentController.text,
+          'postedBy': userName,
+          'postedById': user.uid,
+          'lastActivityTimestamp': FieldValue.serverTimestamp(),
+        });
+        
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Announcement successfully posted!')),
@@ -108,7 +139,6 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
       }
 
       if (mounted) {
-        // Pop with 'true' to signal the calling page (detail page) to refresh
         Navigator.pop(context, true); 
       }
     } catch (e) {

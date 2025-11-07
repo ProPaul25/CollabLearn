@@ -559,15 +559,56 @@ class StreamTab extends StatelessWidget {
   }
 
   Widget _buildAnnouncementFeedCard(BuildContext context, Map<String, dynamic> data) {
-    final announcement = Announcement(
-      id: '',
-      title: data['title'] ?? '',
-      content: data['content'] ?? '',
-      postedBy: data['postedBy'] ?? '',
-      postedOn: data['lastActivityTimestamp'] ?? Timestamp.now(),
-      courseId: data['courseId'] ?? '', 
-      postedById: data['postedById'] ?? '',  // FIXED: Added missing postedById argument
+    // FIXED: Use FutureBuilder to resolve announcement ID if missing
+    final String? storedAnnouncementId = data['announcementId'];
+    
+    return FutureBuilder<String>(
+      future: _resolveAnnouncementId(data, storedAnnouncementId),
+      builder: (context, snapshot) {
+        final announcementId = snapshot.data ?? storedAnnouncementId ?? '';
+        
+        final announcement = Announcement(
+          id: announcementId,
+          title: data['title'] ?? '',
+          content: data['content'] ?? '',
+          postedBy: data['postedBy'] ?? '',
+          postedOn: data['lastActivityTimestamp'] ?? Timestamp.now(),
+          courseId: data['courseId'] ?? '', 
+          postedById: data['postedById'] ?? '',
+        );
+        
+        return _buildAnnouncementCard(context, announcement);
+      },
     );
+  }
+  
+  // Helper method to resolve announcement ID from announcements collection
+  Future<String> _resolveAnnouncementId(Map<String, dynamic> data, String? existingId) async {
+    if (existingId != null && existingId.isNotEmpty) {
+      return existingId;
+    }
+    
+    try {
+      final announcementQuery = await FirebaseFirestore.instance
+          .collection('announcements')
+          .where('courseId', isEqualTo: data['courseId'])
+          .where('title', isEqualTo: data['title'])
+          .where('postedById', isEqualTo: data['postedById'])
+          .limit(1)
+          .get();
+      
+      if (announcementQuery.docs.isNotEmpty) {
+        return announcementQuery.docs.first.id;
+      }
+    } catch (e) {
+      debugPrint('Error finding announcement ID: $e');
+    }
+    
+    return '';
+  }
+  
+  // Extracted card UI to separate method
+  Widget _buildAnnouncementCard(BuildContext context, Announcement announcement) {
     return Card(
       elevation: 2,
       margin: const EdgeInsets.only(bottom: 15),
