@@ -1,19 +1,23 @@
-// lib/course_dashboard_page.dart - FIXED
+// lib/course_dashboard_page.dart
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart'; 
 import 'package:cloud_firestore/cloud_firestore.dart'; 
+// All necessary imports for the tabs and functionality
 import 'study_materials_view_page.dart'; 
 import 'doubt_polls_view_page.dart';
 import 'people_view_page.dart';
 import 'attendance_management_page.dart';
-import 'create_announcement_page.dart'; 
+import 'stream_page.dart'; // Assuming StreamTab is defined here
+import 'create_announcement_page.dart'; // REQUIRED for navigation (Fixes undefined_method)
+import 'study_groups_view_page.dart'; 
+// You may need more imports depending on the full content of your original file
 import 'assignment_detail_page.dart'; 
 import 'doubt_poll_detail_page.dart';
 import 'announcement_detail_page.dart';
-import 'stream_page.dart' show Announcement; 
-import 'study_groups_view_page.dart'; 
-import 'package:url_launcher/url_launcher.dart';
+import 'stream_page.dart' show Announcement, StreamTab; 
+import 'package:url_launcher/url_launcher.dart'; 
+import 'study_materials_view_page.dart' show AssignmentItem; 
 
 class CourseDashboardPage extends StatefulWidget {
   final String classId;
@@ -33,16 +37,8 @@ class CourseDashboardPage extends StatefulWidget {
 
 class _CourseDashboardPageState extends State<CourseDashboardPage> {
   int _selectedIndex = 0;
+  
   late final Future<bool> _isInstructorFuture;
-
-  Future<bool> _isCurrentUserInstructor() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return false;
-    final classDoc = await FirebaseFirestore.instance.collection('classes').doc(widget.classId).get();
-    final data = classDoc.data();
-    if (data == null) return false;
-    return data['instructorId'] == user.uid;
-  }
 
   @override
   void initState() {
@@ -50,60 +46,187 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
     _isInstructorFuture = _isCurrentUserInstructor();
   }
 
+  // Helper method: Check if current user is an instructor
+  Future<bool> _isCurrentUserInstructor() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return false;
+    
+    try {
+      final classDoc = await FirebaseFirestore.instance.collection('classes').doc(widget.classId).get();
+      final data = classDoc.data();
+      // Check against instructorId and coInstructorIds
+      final String instructorId = data?['instructorId'] ?? '';
+      final List<dynamic> coInstructorIds = data?['coInstructorIds'] ?? [];
+
+      return instructorId == user.uid || coInstructorIds.contains(user.uid);
+    } catch (e) {
+      // Handle error
+      return false;
+    }
+  }
+
+  // BottomNavigationBar onTap handler
   void _onItemTapped(int index) {
     setState(() {
       _selectedIndex = index;
     });
   }
 
+  // METHOD: Handles archiving the class (from previous step 1/2 discussion)
+  Future<void> _archiveClass() async {
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Archive Class'),
+        content: const Text('Are you sure you want to archive this class? This will hide it from students and your main list.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Archive', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        await FirebaseFirestore.instance.collection('classes').doc(widget.classId).update({
+          'isArchived': true,
+        });
+
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Class archived successfully!')),
+        );
+        // Navigate back to the home/classes list screen
+        Navigator.of(context).pop(); 
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to archive class: $e')),
+        );
+      }
+    }
+  }
+
+  // METHOD: Navigates to the CreateAnnouncementPage (FIXES undefined_method error)
+  void _navigateToCreateAnnouncement(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => CreateAnnouncementPage(classId: widget.classId),
+      ),
+    );
+  }
+
+  // CORRECTED build method
   @override
   Widget build(BuildContext context) {
     final primaryColor = Theme.of(context).colorScheme.primary;
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.className),
-        backgroundColor: primaryColor,
-        foregroundColor: Colors.white,
-        elevation: 0,
-      ),
-      body: FutureBuilder<bool>(
-        future: _isInstructorFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final bool isInstructor = snapshot.data ?? false;
-          final List<Widget> _widgetOptions = <Widget>[
-            StreamTab( 
-              className: widget.className,
-              classCode: widget.classCode,
-              classId: widget.classId,     
-              isInstructor: isInstructor, 
+
+    // The entire Scaffold is wrapped in FutureBuilder to access the async result
+    return FutureBuilder<bool>(
+      future: _isInstructorFuture,
+      builder: (context, snapshot) {
+        
+        // Handle loading state
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        
+        final bool isInstructor = snapshot.data ?? false; // Get resolved value
+        
+        // Define the widget list locally, using the resolved 'isInstructor' value. 
+        // (FIXES undefined_identifier error)
+        final List<Widget> _widgetOptions = <Widget>[
+          StreamTab( 
+            className: widget.className,
+            classCode: widget.classCode,
+            classId: widget.classId,    
+            isInstructor: isInstructor, // Pass the correct flag
+          ),
+          StudyMaterialsViewPage(classId: widget.classId), 
+          PeopleViewPage(classId: widget.classId, isInstructor: isInstructor), // Pass the correct flag
+          AttendanceManagementPage(classId: widget.classId),
+          DoubtPollsViewPage(classId: widget.classId), 
+          StudyGroupsViewPage(classId: widget.classId),
+        ];
+
+        return Scaffold(
+          appBar: AppBar(
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(widget.className, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                Text('Code: ${widget.classCode}', style: const TextStyle(fontSize: 12)),
+              ],
             ),
-            StudyMaterialsViewPage(classId: widget.classId), 
-            PeopleViewPage(classId: widget.classId,isInstructor: isInstructor),
-            AttendanceManagementPage(classId: widget.classId),
-            DoubtPollsViewPage(classId: widget.classId), 
-            StudyGroupsViewPage(classId: widget.classId),
-          ];
-          return _widgetOptions.elementAt(_selectedIndex);
-        },
-      ), 
-      bottomNavigationBar: BottomNavigationBar(
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(icon: Icon(Icons.stream), label: 'Stream'),
-          BottomNavigationBarItem(icon: Icon(Icons.class_outlined), label: 'Classworks'),
-          BottomNavigationBarItem(icon: Icon(Icons.people), label: 'People'),
-          BottomNavigationBarItem(icon: Icon(Icons.check_box), label: 'Attendance'),
-          BottomNavigationBarItem(icon: Icon(Icons.forum), label: 'Discussion'),
-          BottomNavigationBarItem(icon: Icon(Icons.groups), label: 'Groups'),
-        ],
-        currentIndex: _selectedIndex,
-        selectedItemColor: primaryColor,
-        unselectedItemColor: Colors.grey,
-        onTap: _onItemTapped,
-        type: BottomNavigationBarType.fixed, 
-      ),
+            backgroundColor: primaryColor,
+            foregroundColor: Colors.white,
+            elevation: 0,
+            actions: [
+              // --- Archive & Announcement Button for Instructors ---
+              if (isInstructor) // Only show menu if user is an instructor
+                PopupMenuButton<String>(
+                  onSelected: (value) {
+                    if (value == 'archive') {
+                      _archiveClass(); 
+                    }
+                    else if (value == 'createAnnouncement' && _selectedIndex == 0) {
+                        _navigateToCreateAnnouncement(context); 
+                    }
+                  },
+                  itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                    // Option 1: Archive Class
+                    const PopupMenuItem<String>(
+                      value: 'archive',
+                      child: Row(
+                        children: [
+                          Icon(Icons.archive, color: Colors.red),
+                          SizedBox(width: 8),
+                          Text('Archive Class'),
+                        ],
+                      ),
+                    ),
+                    // Option 2: Create Announcement (Only visible on Stream Tab)
+                    if (_selectedIndex == 0)
+                    const PopupMenuItem<String>(
+                      value: 'createAnnouncement',
+                      child: Row(
+                        children: [
+                          Icon(Icons.add_box_outlined, color: Colors.blue),
+                          SizedBox(width: 8),
+                          Text('Create Announcement'),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+          // Use the locally defined _widgetOptions
+          body: _widgetOptions.elementAt(_selectedIndex), 
+          
+          bottomNavigationBar: BottomNavigationBar(
+            items: const <BottomNavigationBarItem>[
+              BottomNavigationBarItem(icon: Icon(Icons.stream), label: 'Stream'),
+              BottomNavigationBarItem(icon: Icon(Icons.class_outlined), label: 'Classworks'),
+              BottomNavigationBarItem(icon: Icon(Icons.people), label: 'People'),
+              BottomNavigationBarItem(icon: Icon(Icons.check_box), label: 'Attendance'),
+              BottomNavigationBarItem(icon: Icon(Icons.forum), label: 'Discussion'),
+              BottomNavigationBarItem(icon: Icon(Icons.groups), label: 'Groups'),
+            ],
+            currentIndex: _selectedIndex,
+            selectedItemColor: primaryColor,
+            unselectedItemColor: Colors.grey,
+            onTap: _onItemTapped,
+            type: BottomNavigationBarType.fixed,
+          ),
+        );
+      },
     );
   }
 }

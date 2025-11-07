@@ -103,20 +103,25 @@ class _LandingPageState extends State<LandingPage> {
     try {
       if (mounted) setState(() => _isClassesLoading = true); 
 
+      // 1. KEEP THE FIRESTORE QUERY SIMPLE (NO 'isArchived' FILTER HERE)
       final classesSnapshot = await FirebaseFirestore.instance
           .collection('classes')
           .where(FieldPath.documentId, whereIn: classIds.sublist(0, classIds.length > 10 ? 10 : classIds.length))
           .get();
 
-      final classes = classesSnapshot.docs.map((doc) {
+      // 2. Map and filter locally in Dart
+      final allClasses = classesSnapshot.docs.map((doc) {
         final data = doc.data();
         data['classId'] = doc.id; 
         return data;
       }).toList();
+      
+      final filteredClasses = allClasses.where((c) => c['isArchived'] != true).toList(); 
 
       if (mounted) {
         setState(() {
-          _enrolledClasses = classes;
+          // Set the state with the filtered list
+          _enrolledClasses = filteredClasses; 
         });
       }
     } catch (e) {
@@ -125,7 +130,7 @@ class _LandingPageState extends State<LandingPage> {
     } finally {
       if (mounted) setState(() => _isClassesLoading = false);
     }
-  }
+}
 
   Future<void> _logout() async {
     await FirebaseAuth.instance.signOut();
