@@ -1,21 +1,18 @@
-// lib/people_view_page.dart - UPDATED WITH BUTTONS AND INSTRUCTOR CHECK
+// lib/people_view_page.dart - FINAL FIX: Ensure all UIDs are checked for display AND full refresh
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-// NOTE: Ensure these two files exist and contain the navigation logic
 import 'add_co_instructor_page.dart'; 
-import 'add_student_page.dart';
-import 'student_management_detail_page.dart'; 
+import 'add_student_page.dart'; 
+import 'instructor_student_report_page.dart'; 
 
 class PeopleViewPage extends StatefulWidget {
   final String classId;
-  final bool isInstructor;
 
   const PeopleViewPage({
     super.key,
     required this.classId,
-    required this.isInstructor,
   });
 
   @override
@@ -24,48 +21,73 @@ class PeopleViewPage extends StatefulWidget {
 
 class _PeopleViewPageState extends State<PeopleViewPage> {
   final _currentUser = FirebaseAuth.instance.currentUser;
-  late final Future<bool> _isInstructorFuture;
+  late Future<bool> _isInstructorFuture;
+  late Future<DocumentSnapshot<Map<String, dynamic>>> _classDataFuture; // Store data future
 
   @override
   void initState() {
     super.initState();
-    // Start fetching instructor status immediately
     _isInstructorFuture = _isCurrentUserInstructor();
+    _classDataFuture = _fetchClassData();
   }
 
-  // Determine if the current user is the main instructor for this class
+  // Helper to fetch class data
+  Future<DocumentSnapshot<Map<String, dynamic>>> _fetchClassData() {
+     // Use GetOptions(source: Source.server) for debugging to verify data consistency
+     return FirebaseFirestore.instance.collection('classes').doc(widget.classId).get();
+  }
+
+  // Method to reload data after navigation pop
+  void _reloadData() {
+    setState(() {
+      _isInstructorFuture = _isCurrentUserInstructor();
+      _classDataFuture = _fetchClassData(); // Refresh the class data
+    });
+  }
+
+
+  // Determine if the current user is the main instructor or a co-instructor for this class
   Future<bool> _isCurrentUserInstructor() async {
     if (_currentUser == null) return false;
     
-    // NOTE: This currently checks against a single 'instructorId' field, 
-    // consistent with your other files. For co-teachers, your Firestore 
-    // structure should use an 'instructorIds' array and check membership.
     try {
-      final classDoc = await FirebaseFirestore.instance.collection('classes').doc(widget.classId).get();
+      final classDoc = await _fetchClassData();
       final data = classDoc.data();
       if (data == null) return false;
-      return data['instructorId'] == _currentUser!.uid;
+      
+      final instructorIds = List<String>.from(data['instructorIds'] ?? []).where((id) => id.isNotEmpty).toList();
+      final primaryInstructorId = (data['instructorId'] as String?) ?? '';
+
+      return instructorIds.contains(_currentUser!.uid) || primaryInstructorId == _currentUser!.uid;
     } catch (e) {
       debugPrint('Error checking instructor status: $e');
       return false;
     }
   }
 
-
   // A helper to fetch user data for a list of UIDs
   Future<List<Map<String, dynamic>>> _fetchUsersByIds(List<dynamic> uids) async {
     if (uids.isEmpty) return [];
     
     final List<Map<String, dynamic>> userList = [];
-    // Using a loop is necessary if the list size can exceed the 10-item 'whereIn' limit
+    
     for (var uid in uids) {
         if (uid is String && uid.isNotEmpty) {
           final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+          
           if (doc.exists) {
               final data = doc.data();
               if (data != null) {
                   userList.add({...data, 'uid': doc.id});
               }
+          } else {
+            // FIX: Add a distinct, easily recognizable placeholder for debugging
+            userList.add({
+              'uid': uid,
+              'email': 'MISSING USER DATA (UID: $uid)',
+              'firstName': 'Missing',
+              'lastName': 'Profile'
+            });
           }
         }
     }
@@ -77,6 +99,11 @@ class _PeopleViewPageState extends State<PeopleViewPage> {
     final String firstName = userData['firstName']?.toString() ?? '';
     final String lastName = userData['lastName']?.toString() ?? '';
     final name = "$firstName $lastName".trim();
+    
+    // Check if it's the specific placeholder name
+    if (name == 'Missing Profile' && userData['email'] != null) {
+        return 'Missing Profile (${userData['email']})';
+    }
     return name.isEmpty ? "Unnamed User" : name; 
   }
 
@@ -84,14 +111,13 @@ class _PeopleViewPageState extends State<PeopleViewPage> {
   Widget build(BuildContext context) {
     final primaryColor = Theme.of(context).colorScheme.primary;
 
-    // Use a FutureBuilder to wait for both the class data and the instructor status
     return FutureBuilder<bool>(
       future: _isInstructorFuture,
       builder: (context, instructorSnapshot) {
         final bool isInstructor = instructorSnapshot.data ?? false;
 
         return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-          future: FirebaseFirestore.instance.collection('classes').doc(widget.classId).get(),
+          future: _classDataFuture,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
@@ -104,17 +130,21 @@ class _PeopleViewPageState extends State<PeopleViewPage> {
             }
 
             final classData = snapshot.data!.data()!;
-            // For now, only using the main instructorId
-            final instructorId = (classData['instructorId'] as String?) ?? ''; 
             
-            // To support co-teachers, you'd use 'instructorIds' array here. 
-            // We'll stick to 'instructorId' to match existing logic.
+            final primaryInstructorId = (classData['instructorId'] as String?) ?? ''; 
+            final coInstructorUids = classData['instructorIds'] as List<dynamic>? ?? [];
+
+            // Combine all unique instructor UIDs
+            final allInstructorUids = {primaryInstructorId, ...coInstructorUids}.where((uid) => uid.isNotEmpty).toList();
+
             final studentUids = classData['studentIds'] as List<dynamic>? ?? [];
 
-            final allUserIds = [instructorId, ...studentUids].where((uid) => uid.isNotEmpty).toList();
+            final allUserIds = [...allInstructorUids, ...studentUids].where((uid) => uid.isNotEmpty).toList();
+            final uniqueAllUserIds = allUserIds.toSet().toList(); // Ensure uniqueness
+
 
             return FutureBuilder<List<Map<String, dynamic>>>(
-              future: _fetchUsersByIds(allUserIds),
+              future: _fetchUsersByIds(uniqueAllUserIds),
               builder: (context, userSnapshot) {
                 if (userSnapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
@@ -122,39 +152,51 @@ class _PeopleViewPageState extends State<PeopleViewPage> {
 
                 final allUsers = userSnapshot.data ?? [];
                 
-                final instructor = allUsers.firstWhere(
-                    (user) => user['uid'] == instructorId,
-                    orElse: () => {'firstName': 'Unknown', 'lastName': 'Instructor', 'email': 'N/A'}); 
+                // Separate instructors and students
+                final instructors = allUsers.where((user) => allInstructorUids.contains(user['uid'])).toList();
+                final students = allUsers.where((user) => studentUids.contains(user['uid']) && !allInstructorUids.contains(user['uid'])).toList(); // Student not an instructor
+
+                // Sort instructors to put the primary one first (if available)
+                instructors.sort((a, b) {
+                  if (a['uid'] == primaryInstructorId) return -1;
+                  if (b['uid'] == primaryInstructorId) return 1;
+                  return _getUserName(a).compareTo(_getUserName(b));
+                });
                 
-                final students = allUsers.where((user) => user['uid'] != instructorId).toList();
-
-                final String instructorName = _getUserName(instructor);
-                final String instructorEmail = instructor['email']?.toString() ?? 'N/A';
-
                 students.sort((a, b) => _getUserName(a).compareTo(_getUserName(b)));
+
 
                 return ListView(
                   padding: const EdgeInsets.all(16.0),
                   children: [
                     // --- INSTRUCTOR SECTION ---
                     Text(
-                      'Instructor',
+                      'Instructor${instructors.length > 1 ? 's' : ''}',
                       style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: primaryColor),
                     ),
                     const Divider(),
-                    _buildUserTile(context, instructorName, instructorEmail, Icons.school,'', false,),
+                    ...instructors.map((instructor) {
+                      final String instructorName = _getUserName(instructor);
+                      final String instructorEmail = instructor['email']?.toString() ?? 'N/A';
+                      final String instructorUid = instructor['uid']?.toString() ?? '';
+                      final isPrimary = instructorUid == primaryInstructorId;
+
+                      // Pass null onTap for instructors 
+                      return _buildUserTile(context, instructorName, instructorEmail, instructorUid, true, isPrimary ? const Icon(Icons.star, color: Colors.amber) : null, null);
+                    }).toList(),
                     
                     // 1. ADD CO-TEACHER BUTTON (Bottom of Teacher's Section)
                     if (isInstructor)
                       Padding(
                         padding: const EdgeInsets.only(top: 8.0, bottom: 30),
                         child: OutlinedButton.icon(
-                          onPressed: () {
-                            Navigator.of(context).push(
+                          onPressed: () async { // Make onPressed async
+                            await Navigator.of(context).push( // Await the result
                               MaterialPageRoute(
                                 builder: (context) => AddCoInstructorPage(classId: widget.classId),
                               ),
                             );
+                            _reloadData(); // FIX: Reload data when returning
                           },
                           icon: const Icon(Icons.group_add),
                           label: const Text('Add Co-Teacher'),
@@ -176,9 +218,31 @@ class _PeopleViewPageState extends State<PeopleViewPage> {
                     ...students.map((student) {
                       final String studentName = _getUserName(student);
                       final String studentEmail = student['email']?.toString() ?? 'N/A';
-                      final String studentUid = student['uid']?.toString() ?? ''; // Get the UID
-                      
-                      return _buildUserTile(context, studentName, studentEmail, Icons.person, studentUid,widget.isInstructor,);
+                      final String studentUid = student['uid']?.toString() ?? '';
+
+                      return _buildUserTile(
+                        context, 
+                        studentName, 
+                        studentEmail, 
+                        studentUid, 
+                        false, // isInstructor flag: false for students
+                        isInstructor // Only allow navigation if the current user is the course instructor
+                          ? const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.blueGrey)
+                          : null,
+                        isInstructor // Only allow navigation if the current user is the course instructor
+                          ? () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) => InstructorStudentReportPage(
+                                    classId: widget.classId,
+                                    studentId: studentUid,
+                                    studentName: studentName,
+                                  ),
+                                ),
+                              );
+                            } 
+                          : null,
+                      );
                     }).toList(),
 
                     // 2. ADD STUDENT BUTTON (Bottom of Student's Section)
@@ -186,12 +250,13 @@ class _PeopleViewPageState extends State<PeopleViewPage> {
                       Padding(
                         padding: const EdgeInsets.only(top: 16.0),
                         child: FilledButton.icon(
-                          onPressed: () {
-                            Navigator.of(context).push(
+                          onPressed: () async { // Make onPressed async
+                            await Navigator.of(context).push( // Await the result
                               MaterialPageRoute(
                                 builder: (context) => AddStudentPage(classId: widget.classId),
                               ),
                             );
+                            _reloadData(); // FIX: Reload data when returning
                           },
                           icon: const Icon(Icons.person_add),
                           label: const Text('Add Student to Course'),
@@ -208,36 +273,26 @@ class _PeopleViewPageState extends State<PeopleViewPage> {
     );
   }
   
-  Widget _buildUserTile(BuildContext context, String name, String email, IconData icon, String uid, bool isInstructor) {
+  // MODIFIED to accept userId and onTap action
+  Widget _buildUserTile(BuildContext context, String name, String email, String userId, bool isInstructor, Widget? trailingWidget, VoidCallback? onTap) {
     final primaryColor = Theme.of(context).colorScheme.primary;
+    final icon = isInstructor ? Icons.school : Icons.person;
 
-  return Card(
-    margin: const EdgeInsets.symmetric(vertical: 8),
-    elevation: 1,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-    child: ListTile(
-      leading: CircleAvatar(
-        backgroundColor: primaryColor.withAlpha(25),
-        child: Icon(icon, color: primaryColor),
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      elevation: 1,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: primaryColor.withOpacity(0.1),
+          child: Icon(icon, color: primaryColor),
+        ),
+        title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
+        subtitle: Text(email),
+        // Use the passed trailingWidget
+        trailing: trailingWidget, 
+        onTap: onTap,
       ),
-      title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: Text(email),
-      // --- ADD NAVIGATION LOGIC ---
-      onTap: isInstructor && uid.isNotEmpty ? () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => StudentManagementDetailPage(
-              classId: widget.classId,
-              studentId: uid,
-              studentName: name,
-              isInstructor: isInstructor,
-            ),
-          ),
-        );
-      } : null, // Not clickable if not instructor
-      // ----------------------------
-      trailing: isInstructor ? const Icon(Icons.arrow_forward_ios, size: 16) : null,
-    ),
-  );
-}
+    );
+  }
 }

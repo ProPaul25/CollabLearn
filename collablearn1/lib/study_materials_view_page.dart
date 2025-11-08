@@ -1,4 +1,4 @@
-// lib/study_materials_view_page.dart - FINAL FIXED VERSION with Quiz Integration
+// lib/study_materials_view_page.dart - FINAL FIXED VERSION with Quiz Integration (NO CHANGES)
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -212,6 +212,9 @@ class StudyMaterialsViewPage extends StatelessWidget {
   Future<bool> isCurrentUserInstructor(String instructorId) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return false;
+    // NOTE: This logic only checks the primary instructorId. 
+    // For co-instructors, you'd need to fetch the class document again to check the array.
+    // Assuming 'instructorId' here means the primary instructor.
     return user.uid == instructorId;
   }
 

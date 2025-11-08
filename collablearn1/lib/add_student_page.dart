@@ -1,4 +1,4 @@
-// lib/add_student_page.dart
+// lib/add_student_page.dart - FIXED FOR USER ENROLLMENT
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -69,8 +69,7 @@ class _AddStudentPageState extends State<AddStudentPage> {
         setState(() {
           _searchResultId = userId;
           _searchResultName = '${userData['firstName'] ?? ''} ${userData['lastName'] ?? ''}'.trim();
-          // FIX: Use the user's email as a fallback for the display name
-          if (_searchResultName!.isEmpty) _searchResultName = userData['email'] ?? userDoc.id;
+          if (_searchResultName!.isEmpty) _searchResultName = userDoc.id;
         });
       } else {
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(
@@ -96,29 +95,22 @@ class _AddStudentPageState extends State<AddStudentPage> {
     });
 
     try {
-      // --- FIX: Use a Batch Write for Atomicity and Data Integrity ---
-      final batch = FirebaseFirestore.instance.batch();
-
       // 1. Add student to the class document's studentIds array
-      final classDocRef = FirebaseFirestore.instance.collection('classes').doc(widget.classId);
-      batch.update(classDocRef, {
+      await FirebaseFirestore.instance.collection('classes').doc(widget.classId).update({
         'studentIds': FieldValue.arrayUnion([_searchResultId]),
       });
       
-      // 2. Update the user's profile to reflect course enrollment
-      final userDocRef = FirebaseFirestore.instance.collection('users').doc(_searchResultId);
-      batch.update(userDocRef, {
+      // 2. (Optional but Recommended): Update the user's profile to reflect course enrollment
+      // FIX: Uncommented and used arrayUnion for enrolledClasses
+      await FirebaseFirestore.instance.collection('users').doc(_searchResultId).update({
         'enrolledClasses': FieldValue.arrayUnion([widget.classId]),
       });
-
-      await batch.commit();
-      // --- END BATCH FIX ---
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('${_searchResultName} added as student!'), backgroundColor: Colors.green)
         );
-        // Refresh the PeopleViewPage
+        // Pop back to PeopleViewPage
         Navigator.pop(context); 
       }
     } catch (e) {
@@ -139,6 +131,7 @@ class _AddStudentPageState extends State<AddStudentPage> {
 
   @override
   Widget build(BuildContext context) {
+    // ... (rest of the build method remains the same)
     return Scaffold(
       appBar: AppBar(
         title: const Text('Add Student'),
@@ -171,7 +164,7 @@ class _AddStudentPageState extends State<AddStudentPage> {
             ),
             const SizedBox(height: 10),
             ElevatedButton(
-              onPressed: _isLoading ? null : _searchUserByEmail,
+              onPressed: _emailController.text.trim().isEmpty || _isLoading ? null : _searchUserByEmail,
               child: const Text('Search User'),
             ),
             

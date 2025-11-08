@@ -1,4 +1,4 @@
-// lib/add_co_instructor_page.dart
+// lib/add_co_instructor_page.dart - FINAL FIX: Forcing Fresh Data on Search
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -19,37 +19,53 @@ class _AddCoInstructorPageState extends State<AddCoInstructorPage> {
   bool _isLoading = false;
   bool _isAdding = false;
   
-  List<String> _currentInstructorIds = [];
+  String? _currentStudentClassId; 
 
   @override
   void initState() {
     super.initState();
-    _loadCurrentInstructors();
   }
+  
+  // Helper to get ALL current instructor UIDs AND the class document
+  Future<Map<String, dynamic>> _getFreshClassData() async {
+      // FIX: Ensure we explicitly request data from the server for validation
+      final classDoc = await FirebaseFirestore.instance.collection('classes').doc(widget.classId).get(const GetOptions(source: Source.server));
+      if (!classDoc.exists) return {'instructorIds': [], 'studentIds': []};
 
-  Future<void> _loadCurrentInstructors() async {
-    final classDoc = await FirebaseFirestore.instance.collection('classes').doc(widget.classId).get();
-    if (classDoc.exists) {
-      final data = classDoc.data();
-      setState(() {
-        // Handle both old single field and new array field
-        _currentInstructorIds = List<String>.from(data?['instructorIds'] ?? [data?['instructorId']]).where((id) => id.isNotEmpty).toList();
-      });
-    }
+      final classData = classDoc.data();
+      List<String> instructorIds = List<String>.from(classData?['instructorIds'] ?? []).where((id) => id.isNotEmpty).toList();
+      
+      // Include primary instructor for validation if using the legacy field
+      final primaryId = classData?['instructorId'] as String?;
+      if (primaryId != null && primaryId.isNotEmpty && !instructorIds.contains(primaryId)) {
+        instructorIds.add(primaryId);
+      }
+      
+      return {
+        'classData': classData,
+        'instructorIds': instructorIds,
+        'studentIds': List<String>.from(classData?['studentIds'] ?? []),
+      };
   }
 
   Future<void> _searchUserByEmail() async {
     final email = _emailController.text.trim();
     if (email.isEmpty) return;
     
-    // Clear previous results and show loading
     setState(() {
       _isLoading = true;
       _searchResultId = null;
       _searchResultName = null;
+      _currentStudentClassId = null; 
     });
 
     try {
+      // FORCE A FRESH READ OF CLASS DATA FROM SERVER
+      final freshClassInfo = await _getFreshClassData();
+      final currentInstructorIds = freshClassInfo['instructorIds'] as List<String>;
+      final currentStudentIds = freshClassInfo['studentIds'] as List<String>;
+
+
       // 1. Search the 'users' collection for the email.
       final querySnapshot = await FirebaseFirestore.instance
           .collection('users')
@@ -62,19 +78,24 @@ class _AddCoInstructorPageState extends State<AddCoInstructorPage> {
         final userData = userDoc.data();
         final userId = userDoc.id;
         
-        // 2. Validation: Check if the user is already an instructor
-        if (_currentInstructorIds.contains(userId)) {
+        // 2. Validation: Check if the user is already an instructor (using the fresh list)
+        if (currentInstructorIds.contains(userId)) {
              if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+                // FIX: This message now correctly relies on server data
                 const SnackBar(content: Text('This user is already an instructor for this course.'), backgroundColor: Colors.orange)
             );
             return;
         }
 
+        // 3. Check if the user is currently a student in this class
+        if (currentStudentIds.contains(userId)) {
+          _currentStudentClassId = userId; // User is a student, mark for promotion logic
+        }
+
         setState(() {
           _searchResultId = userId;
           _searchResultName = '${userData['firstName'] ?? ''} ${userData['lastName'] ?? ''}'.trim();
-          // FIX: Use the user's email as a fallback for the display name
-          if (_searchResultName!.isEmpty) _searchResultName = userData['email'] ?? userDoc.id;
+          if (_searchResultName!.isEmpty) _searchResultName = userDoc.id;
         });
       } else {
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(
@@ -83,6 +104,9 @@ class _AddCoInstructorPageState extends State<AddCoInstructorPage> {
       }
     } catch (e) {
       debugPrint('Search error: $e');
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Search failed: ${e.toString()}'), backgroundColor: Colors.red)
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -100,23 +124,58 @@ class _AddCoInstructorPageState extends State<AddCoInstructorPage> {
     });
 
     try {
-      // Use arrayUnion to safely add the UID to the list of instructors
-      await FirebaseFirestore.instance.collection('classes').doc(widget.classId).update({
+      final WriteBatch batch = FirebaseFirestore.instance.batch();
+      final userRef = FirebaseFirestore.instance.collection('users').doc(_searchResultId);
+      final classRef = FirebaseFirestore.instance.collection('classes').doc(widget.classId);
+
+      // --- 1. Update the Class Document ---
+      // Add user to instructorIds array
+      batch.update(classRef, {
         'instructorIds': FieldValue.arrayUnion([_searchResultId]),
       });
+
+      // If the user was a student, remove them from studentIds
+      if (_currentStudentClassId != null) {
+          batch.update(classRef, {
+            'studentIds': FieldValue.arrayRemove([_searchResultId]),
+          });
+      }
+
+      // --- 2. Update the User Document ---
+      // Add the class to their instructedClasses array
+      batch.update(userRef, {
+        'instructedClasses': FieldValue.arrayUnion([widget.classId]),
+      });
       
+      // If the user was a student, remove the class from their enrolledClasses array
+      if (_currentStudentClassId != null) {
+        batch.update(userRef, {
+          'enrolledClasses': FieldValue.arrayRemove([widget.classId]),
+        });
+      }
+      
+      // Commit the transaction
+      await batch.commit();
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('${_searchResultName} added as co-instructor!'), backgroundColor: Colors.green)
         );
-        // Refresh the PeopleViewPage
-        Navigator.pop(context); 
+        // Pop back to PeopleViewPage (passing true signals success and triggers refresh)
+        Navigator.pop(context, true); 
       }
     } catch (e) {
       debugPrint('Add instructor error: $e');
       if (mounted) {
+        // Since the security rules are complex, a blanket permission-denied check is safer.
+        String message = 'Failed to add instructor: $e';
+        if (e is FirebaseException && e.code == 'permission-denied') {
+          // This happens when the user update rule fails
+          message = 'Failed to add instructor: Check Firebase Security Rules for user update permissions (users collection).';
+        }
+        
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to add instructor: $e'), backgroundColor: Colors.red)
+            SnackBar(content: Text(message), backgroundColor: Colors.red)
         );
       }
     } finally {
@@ -130,6 +189,14 @@ class _AddCoInstructorPageState extends State<AddCoInstructorPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Determine the text based on current status
+    String buttonText = 'Add';
+    String statusText = 'Add as Co-Instructor';
+    if (_searchResultId != null && _currentStudentClassId != null) {
+        buttonText = 'Promote';
+        statusText = 'Promote from Student to Co-Instructor';
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Add Co-Instructor'),
@@ -162,7 +229,7 @@ class _AddCoInstructorPageState extends State<AddCoInstructorPage> {
             ),
             const SizedBox(height: 10),
             ElevatedButton(
-              onPressed: _isLoading ? null : _searchUserByEmail,
+              onPressed: _emailController.text.trim().isEmpty || _isLoading ? null : _searchUserByEmail,
               child: const Text('Search User'),
             ),
             
@@ -175,13 +242,13 @@ class _AddCoInstructorPageState extends State<AddCoInstructorPage> {
                 child: ListTile(
                   leading: const Icon(Icons.person_add, color: Colors.green),
                   title: Text(_searchResultName!),
-                  subtitle: Text(_emailController.text.trim()),
+                  subtitle: Text(statusText), // Show status if promoting
                   trailing: _isAdding 
                       ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                       : ElevatedButton(
                           onPressed: _addInstructor,
                           style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                          child: const Text('Add', style: TextStyle(color: Colors.white)),
+                          child: Text(buttonText, style: const TextStyle(color: Colors.white)),
                         ),
                 ),
               ),

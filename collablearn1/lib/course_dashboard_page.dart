@@ -1,23 +1,32 @@
-// lib/course_dashboard_page.dart
+// lib/course_dashboard_page.dart - FINAL FIX: Corrected Imports
+
+// lib/course_dashboard_page.dart - FINAL FIX: Cleaned Imports (Confirmed)
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart'; 
 import 'package:cloud_firestore/cloud_firestore.dart'; 
-// All necessary imports for the tabs and functionality
+import 'package:url_launcher/url_launcher.dart'; 
+
+// All necessary imports for the tabs and navigation
 import 'study_materials_view_page.dart'; 
 import 'doubt_polls_view_page.dart';
 import 'people_view_page.dart';
 import 'attendance_management_page.dart';
-import 'stream_page.dart'; // Assuming StreamTab is defined here
-import 'create_announcement_page.dart'; // REQUIRED for navigation (Fixes undefined_method)
+import 'create_announcement_page.dart'; 
 import 'study_groups_view_page.dart'; 
-// You may need more imports depending on the full content of your original file
+
+// FIX: Import StreamTab widget and Announcement model from stream_page.dart where they are defined
+import 'stream_page.dart' show StreamTab, Announcement; 
+
+// FIX: Import all required DATA MODELS from study_materials_view_page.dart
+import 'study_materials_view_page.dart' show AssignmentItem, Assignment, QuizItem, StudyMaterial; 
+
+// Navigation targets
 import 'assignment_detail_page.dart'; 
 import 'doubt_poll_detail_page.dart';
 import 'announcement_detail_page.dart';
-import 'stream_page.dart' show Announcement, StreamTab; 
-import 'package:url_launcher/url_launcher.dart'; 
-import 'study_materials_view_page.dart' show AssignmentItem; 
+
+// ... (Rest of CourseDashboardPage code remains unchanged)
 
 class CourseDashboardPage extends StatefulWidget {
   final String classId;
@@ -55,7 +64,6 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
         final data = doc.data();
         if (mounted) {
           setState(() {
-            // Check the existing isArchived field, default to false if null
             _isArchived = data?['isArchived'] == true; 
           });
         }
@@ -87,7 +95,7 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
   if (confirm == true) {
     try {
       await FirebaseFirestore.instance.collection('classes').doc(widget.classId).update({
-        'isArchived': false, // <-- This is the key change!
+        'isArchived': false, 
       });
 
       if (!mounted) return;
@@ -95,14 +103,11 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
         const SnackBar(content: Text('Class unarchived successfully!')),
       );
       
-      // Update local state and pop the dashboard page to return to the list
       setState(() {
         _isArchived = false;
       });
-      // Pop twice: once for the dashboard page, and once for the class list to refresh itself.
-      // Since the main list is now filtered to show non-archived, this will work.
       Navigator.of(context).pop(); 
-      Navigator.of(context).pop(); // Go back to the main class list screen
+      Navigator.of(context).pop(); 
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -112,7 +117,6 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
   }
   }
 
-  // Helper method: Check if current user is an instructor
   Future<bool> _isCurrentUserInstructor() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return false;
@@ -120,25 +124,21 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
     try {
       final classDoc = await FirebaseFirestore.instance.collection('classes').doc(widget.classId).get();
       final data = classDoc.data();
-      // Check against instructorId and coInstructorIds
       final String instructorId = data?['instructorId'] ?? '';
-      final List<dynamic> coInstructorIds = data?['coInstructorIds'] ?? [];
+      final List<dynamic> instructorIds = data?['instructorIds'] ?? [];
 
-      return instructorId == user.uid || coInstructorIds.contains(user.uid);
+      return instructorId == user.uid || instructorIds.contains(user.uid);
     } catch (e) {
-      // Handle error
       return false;
     }
   }
 
-  // BottomNavigationBar onTap handler
   void _onItemTapped(int index) {
     setState(() {
       _selectedIndex = index;
     });
   }
 
-  // METHOD: Handles archiving the class (from previous step 1/2 discussion)
   Future<void> _archiveClass() async {
     final bool? confirm = await showDialog<bool>(
       context: context,
@@ -168,7 +168,6 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Class archived successfully!')),
         );
-        // Navigate back to the home/classes list screen
         Navigator.of(context).pop(); 
       } catch (e) {
         if (!mounted) return;
@@ -179,7 +178,6 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
     }
   }
 
-  // METHOD: Navigates to the CreateAnnouncementPage (FIXES undefined_method error)
   void _navigateToCreateAnnouncement(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -188,34 +186,29 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
     );
   }
 
-  // CORRECTED build method
   @override
   Widget build(BuildContext context) {
     final primaryColor = Theme.of(context).colorScheme.primary;
 
-    // The entire Scaffold is wrapped in FutureBuilder to access the async result
     return FutureBuilder<bool>(
       future: _isInstructorFuture,
       builder: (context, snapshot) {
         
-        // Handle loading state
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
         
-        final bool isInstructor = snapshot.data ?? false; // Get resolved value
+        final bool isInstructor = snapshot.data ?? false; 
         
-        // Define the widget list locally, using the resolved 'isInstructor' value. 
-        // (FIXES undefined_identifier error)
         final List<Widget> _widgetOptions = <Widget>[
           StreamTab( 
             className: widget.className,
             classCode: widget.classCode,
             classId: widget.classId,    
-            isInstructor: isInstructor, // Pass the correct flag
+            isInstructor: isInstructor, 
           ),
           StudyMaterialsViewPage(classId: widget.classId), 
-          PeopleViewPage(classId: widget.classId, isInstructor: isInstructor), // Pass the correct flag
+          PeopleViewPage(classId: widget.classId), 
           AttendanceManagementPage(classId: widget.classId),
           DoubtPollsViewPage(classId: widget.classId), 
           StudyGroupsViewPage(classId: widget.classId),
@@ -234,13 +227,12 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
             foregroundColor: Colors.white,
             elevation: 0,
             actions: [
-              // --- Archive/Unarchive & Announcement Button for Instructors ---
-              if (isInstructor) // Only show menu if user is an instructor
+              if (isInstructor) 
                 PopupMenuButton<String>(
                   onSelected: (value) {
                     if (value == 'archive') {
                       _archiveClass(); 
-                    } else if (value == 'unarchive') { // Handle unarchive selection
+                    } else if (value == 'unarchive') { 
                       _unarchiveClass();
                     }
                     else if (value == 'createAnnouncement' && _selectedIndex == 0) {
@@ -248,7 +240,6 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
                     }
                   },
                   itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                    // 👇 Conditionally show Archive or Unarchive
                     if (_isArchived)
                       const PopupMenuItem<String>(
                         value: 'unarchive',
@@ -272,7 +263,6 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
                         ),
                       ),
                       
-                    // Option 2: Create Announcement (Only visible on Stream Tab)
                     if (_selectedIndex == 0)
                       const PopupMenuItem<String>(
                         value: 'createAnnouncement',
@@ -288,7 +278,6 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
                 ),
             ],
           ),
-          // Use the locally defined _widgetOptions
           body: _widgetOptions.elementAt(_selectedIndex), 
           
           bottomNavigationBar: BottomNavigationBar(
@@ -313,7 +302,7 @@ class _CourseDashboardPageState extends State<CourseDashboardPage> {
 }
 
 // ===================================================================
-// DEDICATED STREAM TAB WIDGET
+// DEDICATED STREAM TAB WIDGET (Repeated here for clarity, but defined in stream_page.dart)
 // ===================================================================
 
 class StreamTab extends StatelessWidget {
@@ -548,6 +537,7 @@ class StreamTab extends StatelessWidget {
         subtitle: Text(formattedDueDate(), style: const TextStyle(color: Colors.orange)),
         trailing: const Icon(Icons.arrow_forward_ios, size: 16),
         onTap: () {
+          // IMPORTANT: Assignment.toFullAssignment() is defined in study_materials_view_page.dart
           Navigator.of(context).push(
             MaterialPageRoute(
               builder: (context) => AssignmentDetailPage(assignment: assignment.toFullAssignment()),
@@ -559,7 +549,6 @@ class StreamTab extends StatelessWidget {
   }
 
   Widget _buildAnnouncementFeedCard(BuildContext context, Map<String, dynamic> data) {
-    // FIXED: Use FutureBuilder to resolve announcement ID if missing
     final String? storedAnnouncementId = data['announcementId'];
     
     return FutureBuilder<String>(
@@ -609,6 +598,13 @@ class StreamTab extends StatelessWidget {
   
   // Extracted card UI to separate method
   Widget _buildAnnouncementCard(BuildContext context, Announcement announcement) {
+    String timeAgo(Timestamp timestamp) {
+      final duration = DateTime.now().difference(timestamp.toDate());
+      if (duration.inMinutes < 60) return '${duration.inMinutes}m ago';
+      if (duration.inHours < 24) return '${duration.inHours}h ago';
+      return '${timestamp.toDate().day}/${timestamp.toDate().month}'; 
+    }
+    
     return Card(
       elevation: 2,
       margin: const EdgeInsets.only(bottom: 15),
@@ -627,7 +623,7 @@ class StreamTab extends StatelessWidget {
             Text(announcement.content, maxLines: 2, overflow: TextOverflow.ellipsis),
             const SizedBox(height: 8),
             Text(
-              'Posted by ${announcement.postedBy} • ${_timeAgo(announcement.postedOn)}',
+              'Posted by ${announcement.postedBy} • ${timeAgo(announcement.postedOn)}',
               style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.secondary),
             ),
           ],
@@ -689,7 +685,7 @@ class StreamTab extends StatelessWidget {
                   'postedOn': data['postedOn'] as Timestamp? ?? Timestamp.now(),
                   'answersCount': answersCount,
                 }, 
-                postedById: data['postedById'] ?? '',  // FIXED: Changed from undefined 'poll' to 'data'
+                postedById: data['postedById'] ?? '',  
               ),
             ),
           );

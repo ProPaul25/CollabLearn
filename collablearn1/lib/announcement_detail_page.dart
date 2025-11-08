@@ -1,9 +1,10 @@
-// lib/announcement_detail_page.dart - FIXED DELETE LOGIC
+// lib/announcement_detail_page.dart - FIXED DEPENDENCY & USAGE
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'stream_page.dart'; // Import to use the Announcement model
+// FIX: Explicitly import the Announcement model from its source
+import 'stream_page.dart' show Announcement; 
 import 'create_announcement_page.dart';
 
 class AnnouncementDetailPage extends StatefulWidget {
@@ -36,10 +37,8 @@ class _AnnouncementDetailPageState extends State<AnnouncementDetailPage> {
     return currentUser != null && currentUser.uid == _currentAnnouncement.postedById;
   }
 
-  // FIXED: Delete both announcement and its feed entry
   Future<void> _deleteAnnouncement() async {
     debugPrint('Attempting to delete announcement with ID: "${_currentAnnouncement.id}"');
-    debugPrint('ID length: ${_currentAnnouncement.id.length}');
     
     if (_currentAnnouncement.id.isEmpty) {
       if (mounted) {
@@ -71,7 +70,6 @@ class _AnnouncementDetailPageState extends State<AnnouncementDetailPage> {
 
     if (confirm) {
       try {
-        // FIXED: Delete BOTH the announcement and its feed entry
         final batch = FirebaseFirestore.instance.batch();
         
         // 1. Delete the announcement document
@@ -90,9 +88,6 @@ class _AnnouncementDetailPageState extends State<AnnouncementDetailPage> {
         
         if (feedQuery.docs.isNotEmpty) {
           batch.delete(feedQuery.docs.first.reference);
-          debugPrint('Found and will delete feed entry: ${feedQuery.docs.first.id}');
-        } else {
-          debugPrint('No feed entry found for announcement ${_currentAnnouncement.id}');
         }
         
         // Execute the batch delete
@@ -117,9 +112,6 @@ class _AnnouncementDetailPageState extends State<AnnouncementDetailPage> {
   }
 
   void _editAnnouncement() async {
-    debugPrint('Editing announcement with ID: "${_currentAnnouncement.id}"');
-    debugPrint('Course ID: ${_currentAnnouncement.courseId}');
-
     final result = await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => CreateAnnouncementPage(
@@ -133,7 +125,6 @@ class _AnnouncementDetailPageState extends State<AnnouncementDetailPage> {
       ),
     );
     
-    // When returning from the edit page, if successful (result == true), re-fetch the data
     if (result == true) {
       try {
         final updatedDoc = await FirebaseFirestore.instance
@@ -141,6 +132,7 @@ class _AnnouncementDetailPageState extends State<AnnouncementDetailPage> {
             .doc(_currentAnnouncement.id)
             .get();
         
+        // FIX: Re-fetch the updated Announcement using the factory method defined in stream_page.dart
         if (updatedDoc.exists) {
           setState(() {
             _currentAnnouncement = Announcement.fromFirestore(updatedDoc);
