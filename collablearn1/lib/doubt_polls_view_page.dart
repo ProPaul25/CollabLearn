@@ -1,4 +1,4 @@
-// lib/doubt_polls_view_page.dart - CORRECTED with Pull-to-Refresh
+// lib/doubt_polls_view_page.dart - CORRECTED
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -52,26 +52,21 @@ class DoubtPollsViewPage extends StatelessWidget {
     required this.classId,
   });
 
-  // --- 2. STREAM SORTING UPDATED ---
+  // --- FIX: Map the QuerySnapshot to List<DoubtPoll> directly here ---
   Stream<List<DoubtPoll>> getDoubtPollsStream(String courseId) {
     return FirebaseFirestore.instance
         .collection('doubt_polls')
         .where('courseId', isEqualTo: courseId)
         .orderBy('upvotes', descending: true)
         .orderBy('postedOn', descending: true)
-        // Add GetOptions(source: Source.server) here to force a manual fetch on refresh
-        .snapshots();
+        .snapshots()
+        .map((snapshot) {
+            // This transforms the stream data into the required List<DoubtPoll>
+            return snapshot.docs
+                .map((doc) => DoubtPoll.fromFirestore(doc))
+                .toList();
+        });
   }
-  
-  // --- NEW: Function to manually force a data refresh (using a dummy stream) ---
-  Future<void> _manualRefresh(BuildContext context) async {
-    // This is a common pattern to force StreamBuilders to re-check the cache/server
-    // by triggering a temporary Future/Delay and re-building the parent.
-    // In this case, since StreamBuilder handles the real-time data, 
-    // simply waiting a moment and relying on the Stream to refresh its cache works.
-    await Future.delayed(const Duration(milliseconds: 500)); 
-  }
-  // ----------------------------------------------------------------------------
 
   // --- 3. UPVOTE LOGIC ---
   Future<void> _toggleUpvote(BuildContext context, DoubtPoll poll, String currentUserId) async {
@@ -97,16 +92,25 @@ class DoubtPollsViewPage extends StatelessWidget {
     }
   }
 
+  // --- NEW: Function to manually force a data refresh (using a dummy stream) ---
+  Future<void> _manualRefresh(BuildContext context) async {
+    // This is a common pattern to force StreamBuilders to re-check the cache/server
+    // by triggering a temporary Future/Delay and re-building the parent.
+    // In this case, since StreamBuilder handles the real-time data, 
+    // simply waiting a moment and relying on the Stream to refresh its cache works.
+    await Future.delayed(const Duration(milliseconds: 500)); 
+  }
+  // ----------------------------------------------------------------------------
+
 
   @override
   Widget build(BuildContext context) {
     final String currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
 
     return Scaffold(
+      // --- FIX: Use the directly mapped stream ---
       body: StreamBuilder<List<DoubtPoll>>(
-        stream: getDoubtPollsStream(classId).map((snapshot) => 
-            snapshot.docs.map((doc) => DoubtPoll.fromFirestore(doc)).toList()
-        ),
+        stream: getDoubtPollsStream(classId),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());

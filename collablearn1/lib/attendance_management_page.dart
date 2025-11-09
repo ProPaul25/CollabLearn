@@ -1,4 +1,4 @@
-// lib/attendance_management_page.dart - CORRECTED with Pull-to-Refresh on Student View
+// lib/attendance_management_page.dart - CORRECTED with Const Fix
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -257,8 +257,9 @@ class StudentAttendanceView extends StatelessWidget {
                   builder: (context, recordSnapshot) {
                     if (recordSnapshot.connectionState == ConnectionState.waiting || 
                         totalSessionsSnapshot.connectionState == ConnectionState.waiting) {
-                      // Must be a ListView for RefreshIndicator
-                      return const ListView(children: [Center(child: Padding(padding: EdgeInsets.only(top: 100), child: CircularProgressIndicator()))]);
+                      // --- FIX: Remove const from ListView and children where CircularProgressIndicator is used ---
+                      return ListView(children: [Center(child: Padding(padding: const EdgeInsets.only(top: 100), child: CircularProgressIndicator()))]);
+                      // --- END FIX ---
                     }
                     if (recordSnapshot.hasError || totalSessionsSnapshot.hasError) {
                       return Center(child: Text('Error: ${recordSnapshot.error ?? totalSessionsSnapshot.error}'));
