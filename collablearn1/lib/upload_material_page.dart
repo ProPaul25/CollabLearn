@@ -1,4 +1,4 @@
-// lib/upload_material_page.dart - CORRECTED
+// lib/upload_material_page.dart - CORRECTED WITH BACKGROUND UPLOAD
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -34,20 +34,23 @@ class _UploadMaterialPageState extends State<UploadMaterialPage> {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
+  
   PlatformFile? _pickedFile;
-  bool _isLoading = false;
+  String? _uploadedFileUrl; 
+  String? _uploadedFileName; 
+  
+  bool _isLoading = false; // For saving metadata
+  bool _isUploading = false; // For file upload process
   double _uploadProgress = 0; 
 
   @override
   void dispose() {
-    // ... (dispose is unchanged)
     _titleController.dispose();
     _descriptionController.dispose();
     super.dispose();
   }
 
   Future<String> _getCurrentUserName() async {
-    // ... (This function is unchanged)
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
@@ -60,69 +63,72 @@ class _UploadMaterialPageState extends State<UploadMaterialPage> {
     return 'Instructor';
   }
 
+  // --- File Picker Logic (MODIFIED) ---
   Future<void> _pickFile() async {
-    // ... (This function is unchanged)
+    if (_isUploading) return;
+    
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf', 'pptx', 'docx', 'zip', 'jpg', 'png'],
     );
     if (result != null) {
+      final file = result.files.first;
       setState(() {
-        _pickedFile = result.files.first;
+        _pickedFile = file;
+        _uploadedFileUrl = null;
+        _uploadedFileName = null;
       });
+      // Start upload immediately after picking a file
+      await _uploadOnSelection(file); 
     }
   }
-
-
-  // --- UPDATED: This now writes to `study_materials` AND `class_feed` ---
-  Future<void> _uploadAndSubmit() async {
-    if (!_formKey.currentState!.validate() || _pickedFile == null) {
-      if (_pickedFile == null) {
-         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please select a file to upload.'), backgroundColor: Colors.orange),
-        );
-      }
+  
+  // --- NEW: Upload on Selection Function ---
+  Future<void> _uploadOnSelection(PlatformFile file) async {
+    if (file.bytes == null && file.path == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error: File data is missing.')),
+      );
+      if (mounted) setState(() => _pickedFile = null);
       return;
     }
-    
+
     setState(() {
-      _isLoading = true;
+      _isUploading = true;
       _uploadProgress = 0;
     });
 
     try {
       final user = FirebaseAuth.instance.currentUser!;
-      final userName = await _getCurrentUserName();
-      final postTime = Timestamp.now();
       
-      // 1. Determine Resource Type (Unchanged)
+      // 1. Determine Resource Type
       CloudinaryResourceType resourceType;
-      if (_pickedFile!.extension!.contains('pdf') || _pickedFile!.extension!.contains('doc') || _pickedFile!.extension!.contains('zip') || _pickedFile!.extension!.contains('pptx')) {
+      if (file.extension!.contains('pdf') || file.extension!.contains('doc') || file.extension!.contains('zip') || file.extension!.contains('pptx')) {
           resourceType = CloudinaryResourceType.Raw; 
       } else {
           resourceType = CloudinaryResourceType.Image;
       }
       
-      // 2. Prepare File for Upload (Unchanged)
+      // 2. Prepare File for Upload
       CloudinaryFile fileToUpload;
       if (kIsWeb) {
-        if (_pickedFile!.bytes == null) throw Exception("File bytes missing for web upload.");
+        if (file.bytes == null) throw Exception("File bytes missing for web upload.");
         fileToUpload = CloudinaryFile.fromByteData(
-          _pickedFile!.bytes!.buffer.asByteData(), 
+          file.bytes!.buffer.asByteData(), 
           resourceType: resourceType,
           folder: 'collablearn/materials/${widget.classId}',
-          identifier: _pickedFile!.name, 
+          identifier: file.name, 
         );
       } else {
-        if (_pickedFile!.path == null) throw Exception("File path missing for mobile upload.");
+        if (file.path == null) throw Exception("File path missing for mobile upload.");
         fileToUpload = CloudinaryFile.fromFile(
-          _pickedFile!.path!, 
+          file.path!, 
           resourceType: resourceType,
           folder: 'collablearn/materials/${widget.classId}',
         );
       }
 
-      // 3. Upload to Cloudinary (Unchanged)
+      // 3. Upload to Cloudinary
       final CloudinaryResponse response = await cloudinary.uploadFile(
         fileToUpload,
         onProgress: (count, total) {
@@ -138,10 +144,67 @@ class _UploadMaterialPageState extends State<UploadMaterialPage> {
           throw Exception("Cloudinary upload failed to return a secure URL.");
       }
       
-      final downloadUrl = response.secureUrl;
-      final cloudinaryPublicId = response.publicId;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+           const SnackBar(content: Text('File upload complete! Fill out the details and submit.')),
+        );
+        setState(() {
+          _uploadedFileUrl = response.secureUrl;
+          _uploadedFileName = file.name;
+          // Keep picked file to display name, size, and extension
+          _pickedFile = file; 
+        });
+      }
 
-      // 4. --- NEW: Use a Batch Write ---
+    } on CloudinaryException catch (e) {
+       if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Cloudinary upload failed: ${e.message}'), backgroundColor: Colors.red),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Upload failed: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
+  }
+
+
+  // --- UPDATED: _uploadAndSubmit (Only saves metadata now) ---
+  Future<void> _uploadAndSubmit() async {
+    if (!_formKey.currentState!.validate() || _pickedFile == null) {
+      if (_pickedFile == null) {
+         ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please select a file to upload.'), backgroundColor: Colors.orange),
+        );
+      }
+      return;
+    }
+    
+    if (_uploadedFileUrl == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('File is still uploading or upload failed. Please wait or re-select the file.'), backgroundColor: Colors.red),
+        );
+        return;
+    }
+
+    setState(() {
+      _isLoading = true; 
+    });
+
+    try {
+      final user = FirebaseAuth.instance.currentUser!;
+      final userName = await _getCurrentUserName();
+      final postTime = Timestamp.now();
+      
+      final downloadUrl = _uploadedFileUrl!;
+      final fileName = _uploadedFileName!;
+
+      // 4. Use a Batch Write
       final batch = FirebaseFirestore.instance.batch();
 
       // Operation 1: Save metadata to 'study_materials' (for Classworks tab)
@@ -149,10 +212,9 @@ class _UploadMaterialPageState extends State<UploadMaterialPage> {
       batch.set(materialRef, {
         'title': _titleController.text.trim(),
         'description': _descriptionController.text.trim(),
-        'fileUrl': downloadUrl,
-        'cloudinaryPublicId': cloudinaryPublicId,
-        'fileName': _pickedFile!.name,
-        'fileSize': _pickedFile!.size,
+        'fileUrl': downloadUrl, 
+        'fileName': fileName,
+        'fileSize': _pickedFile!.size, 
         'fileExtension': _pickedFile!.extension,
         'courseId': widget.classId,
         'uploaderId': user.uid,
@@ -163,30 +225,23 @@ class _UploadMaterialPageState extends State<UploadMaterialPage> {
       // Operation 2: Save to 'class_feed' (for Stream tab)
       final feedRef = FirebaseFirestore.instance.collection('class_feed').doc();
       batch.set(feedRef, {
-        'type': 'material', // <-- NEW TYPE
+        'type': 'material',
         'title': _titleController.text.trim(),
-        'fileName': _pickedFile!.name,
+        'fileName': fileName,
         'fileUrl': downloadUrl,
         'courseId': widget.classId,
         'postedBy': userName,
         'postedById': user.uid,
-        'lastActivityTimestamp': postTime, // Used for sorting
+        'lastActivityTimestamp': postTime,
         'pollId': null,
       });
 
-      // Commit both operations
       await batch.commit();
 
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Study material uploaded successfully!')),
-        );
-      }
-    } on CloudinaryException catch (e) {
-       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Cloudinary upload failed: ${e.message}'), backgroundColor: Colors.red),
         );
       }
     } catch (e) {
@@ -202,7 +257,6 @@ class _UploadMaterialPageState extends State<UploadMaterialPage> {
 
   @override
   Widget build(BuildContext context) {
-    // ... (UI is unchanged)
     final primaryColor = Theme.of(context).colorScheme.primary;
     return Scaffold(
       appBar: AppBar(
@@ -231,7 +285,7 @@ class _UploadMaterialPageState extends State<UploadMaterialPage> {
               ),
               const SizedBox(height: 30),
               ElevatedButton.icon(
-                onPressed: _pickFile,
+                onPressed: _isUploading ? null : _pickFile,
                 icon: const Icon(Icons.folder_open),
                 label: Text(_pickedFile == null ? 'Select File' : 'Change File'),
               ),
@@ -241,7 +295,10 @@ class _UploadMaterialPageState extends State<UploadMaterialPage> {
                   padding: const EdgeInsets.symmetric(vertical: 8.0),
                   child: Row(
                     children: [
-                      Icon(Icons.insert_drive_file, color: primaryColor),
+                      Icon(
+                        _uploadedFileUrl != null ? Icons.check_circle : Icons.insert_drive_file, 
+                        color: _uploadedFileUrl != null ? Colors.green : primaryColor
+                      ),
                       const SizedBox(width: 8),
                       Expanded(child: Text(_pickedFile!.name, overflow: TextOverflow.ellipsis)),
                       Text('${(_pickedFile!.size / 1024).toStringAsFixed(1)} KB', style: const TextStyle(color: Colors.grey)),
@@ -249,7 +306,7 @@ class _UploadMaterialPageState extends State<UploadMaterialPage> {
                   ),
                 ),
               const SizedBox(height: 40),
-              if (_isLoading)
+              if (_isUploading)
                 Column(
                   children: [
                     LinearProgressIndicator(value: _uploadProgress.clamp(0.0, 1.0), color: primaryColor),
@@ -263,9 +320,12 @@ class _UploadMaterialPageState extends State<UploadMaterialPage> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  onPressed: _isLoading ? null : _uploadAndSubmit,
-                  icon: _isLoading ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Icon(Icons.cloud_upload),
-                  label: Text(_isLoading ? 'Uploading...' : 'Upload Material'),
+                  onPressed: (_isLoading || _isUploading) ? null : _uploadAndSubmit,
+                  icon: (_isLoading || _isUploading) ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Icon(Icons.cloud_upload),
+                  label: Text(
+                      _isUploading 
+                        ? 'Uploading...' 
+                        : (_isLoading ? 'Saving Metadata...' : 'Upload Material')),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: primaryColor,
                     foregroundColor: Colors.white,

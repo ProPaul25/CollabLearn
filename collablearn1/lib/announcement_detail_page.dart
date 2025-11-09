@@ -37,6 +37,7 @@ class _AnnouncementDetailPageState extends State<AnnouncementDetailPage> {
     return currentUser != null && currentUser.uid == _currentAnnouncement.postedById;
   }
 
+  // --- START CONFLICT ZONE RESOLVED ---
   Future<void> _deleteAnnouncement() async {
     debugPrint('Attempting to delete announcement with ID: "${_currentAnnouncement.id}"');
     
@@ -110,6 +111,8 @@ class _AnnouncementDetailPageState extends State<AnnouncementDetailPage> {
       }
     }
   }
+  // --- END CONFLICT ZONE RESOLVED (The entire function body was kept) ---
+
 
   void _editAnnouncement() async {
     final result = await Navigator.of(context).push(

@@ -53,6 +53,12 @@ class _LandingPageState extends State<LandingPage> {
     if (user != null) {
       await user.reload(); 
       final refreshedUser = FirebaseAuth.instance.currentUser;
+      
+      // NEW FIX: Add a brief wait here for Firestore synchronization on initial sign-in
+      // This helps mitigate the race condition where Auth is fast but Firestore is slow.
+      if (refreshedUser?.displayName == null && refreshedUser?.email != null) {
+          await Future.delayed(const Duration(milliseconds: 500));
+      }
 
       final userDoc = await FirebaseFirestore.instance.collection('users').doc(refreshedUser!.uid).get();
       

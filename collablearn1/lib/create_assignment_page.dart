@@ -1,4 +1,4 @@
-// lib/create_assignment_page.dart - CORRECTED AND COMPLETE
+// lib/create_assignment_page.dart - CORRECTED AND COMPLETE WITH BACKGROUND UPLOAD
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -8,7 +8,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:cloudinary_public/cloudinary_public.dart'; 
 
 // --- CLOUDINARY INSTANCE ---
-// NOTE: Ensure these constants match your actual Cloudinary setup.
 const String _CLOUD_NAME = 'dc51dx2da'; 
 const String _UPLOAD_PRESET = 'CollabLearn'; 
 
@@ -21,7 +20,6 @@ final CloudinaryPublic cloudinary = CloudinaryPublic(
 
 class CreateAssignmentPage extends StatefulWidget {
   final String classId;
-  // NEW: Optional fields for editing
   final Map<String, dynamic>? assignmentData;
   final String? assignmentId;
 
@@ -42,7 +40,6 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
   final _descriptionController = TextEditingController();
   final _pointsController = TextEditingController();
 
-  // FIX: These state variables must be defined here to resolve "Undefined name" errors.
   DateTime? _selectedDueDate;
   TimeOfDay? _selectedDueTime;
   
@@ -51,7 +48,8 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
   String? _uploadedFileUrl;
   String? _uploadedFileName;
 
-  bool _isLoading = false;
+  bool _isLoading = false; // For saving metadata
+  bool _isUploading = false; // For file upload process
   double _uploadProgress = 0;
   late bool _isEditing;
 
@@ -99,46 +97,75 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
     return 'Instructor';
   }
   
-  // --- File Picker Logic ---
+  // --- File Picker Logic (MODIFIED) ---
   Future<void> _pickFile() async {
+    if (_isUploading) return; // Prevent double click
+
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.any,
     );
 
     if (result != null) {
+      final file = result.files.first;
       setState(() {
-        _pickedFile = result.files.first;
-        // Reset previously uploaded URL/Name if a new file is picked
-        _uploadedFileUrl = null;
-        _uploadedFileName = null;
+        _pickedFile = file;
+        _uploadedFileUrl = null; 
+        _uploadedFileName = null; 
       });
+      // Start upload immediately after picking a file
+      await _uploadOnSelection(file); 
     }
   }
-  
-  // --- Cloudinary Upload Logic ---
-  Future<String?> _uploadFileToCloudinary(PlatformFile file) async {
+
+  // --- NEW: Upload on Selection Function ---
+  Future<void> _uploadOnSelection(PlatformFile file) async {
     if (file.bytes == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Error: File bytes are null.')),
       );
-      return null;
+      if (mounted) setState(() => _pickedFile = null);
+      return;
     }
 
+    setState(() {
+      _isUploading = true; 
+      _uploadProgress = 0;
+    });
+
+    final url = await _uploadFileToCloudinary(file);
+
+    if (mounted) {
+      setState(() {
+        _isUploading = false;
+        if (url != null) {
+          _uploadedFileUrl = url;
+          _uploadedFileName = file.name;
+          _pickedFile = null; // Clear picked file once upload is successful
+          ScaffoldMessenger.of(context).showSnackBar(
+             const SnackBar(content: Text('File upload complete!')),
+          );
+        } else {
+           _pickedFile = null; // Clear picked file if upload fails
+        }
+      });
+    }
+  }
+
+  // --- Cloudinary Upload Logic (Extracting from the original function) ---
+  Future<String?> _uploadFileToCloudinary(PlatformFile file) async {
     try {
-      // FIXED: Use correct CloudinaryResourceType enum values
       final CloudinaryResourceType resourceType = file.extension == 'pdf' 
           ? CloudinaryResourceType.Auto
           : CloudinaryResourceType.Raw;
 
-      final bytes = _pickedFile!.bytes!;      
+      final bytes = file.bytes!;      
 
-      // FIXED: Use fromBytesData instead of fromBytes
       final response = await cloudinary.uploadFile(
         CloudinaryFile.fromBytesData(
           bytes,
           resourceType: resourceType,
           folder: 'collab-learn/assignments/${widget.classId}',
-          identifier: _pickedFile!.name,
+          identifier: file.name,
         ),
         onProgress: (count, total) {
           if (mounted) {
@@ -168,7 +195,8 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
     }
   }
 
-  // --- Date Picker Logic ---
+
+  // --- Date/Time Picker Logic (Unchanged) ---
   Future<void> _selectDate(BuildContext context) async {
     final DateTime? pickedDate = await showDatePicker(
       context: context,
@@ -183,7 +211,6 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
     }
   }
 
-  // --- Time Picker Logic ---
   Future<void> _selectTime(BuildContext context) async {
     final TimeOfDay? pickedTime = await showTimePicker(
       context: context,
@@ -196,7 +223,7 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
     }
   }
 
-  // --- Main Post/Edit Logic ---
+  // --- Main Post/Edit Logic (MODIFIED for Metadata Only) ---
   Future<void> _postAssignment() async {
     if (!_formKey.currentState!.validate()) return;
     if (_selectedDueDate == null || _selectedDueTime == null) {
@@ -205,30 +232,23 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
       );
       return;
     }
-    if (_isLoading) return;
+    if (_isUploading || _isLoading) return; 
+    
+    // Check if the user intends to attach a file but hasn't uploaded successfully
+    if (_pickedFile != null && _uploadedFileUrl == null) {
+       ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('File is still uploading or upload failed. Please wait or try again.')),
+       );
+       return;
+    }
 
     setState(() {
       _isLoading = true;
-      _uploadProgress = 0;
     });
     
+    // Use the final uploaded URL/Name state
     String? fileUrl = _uploadedFileUrl;
     String fileName = _uploadedFileName ?? '';
-    
-    // 1. Handle file upload if a new file was picked
-    if (_pickedFile != null) {
-      fileUrl = await _uploadFileToCloudinary(_pickedFile!);
-      fileName = _pickedFile!.name;
-      if (fileUrl == null) {
-        // Stop if upload failed
-        setState(() { _isLoading = false; });
-        return;
-      }
-    } else if (_uploadedFileUrl == null && _uploadedFileName == null) {
-      // If no file was ever picked or existing one was removed
-      fileUrl = '';
-      fileName = '';
-    }
 
     try {
       final user = FirebaseAuth.instance.currentUser;
@@ -246,13 +266,13 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
         'points': int.tryParse(_pointsController.text) ?? 0,
         'dueDate': Timestamp.fromDate(finalDueDate),
         'fileUrl': fileUrl,
-        'fileName': fileName,
+        'fileName': fileName, 
         'postedBy': userName,
         'postedById': user!.uid,
       };
 
       if (_isEditing && widget.assignmentId != null) {
-        // --- EDIT LOGIC ---
+        // EDIT LOGIC
         await collection.doc(widget.assignmentId).update({
           ...data, 
           'lastUpdatedOn': FieldValue.serverTimestamp(),
@@ -263,7 +283,7 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
           );
         }
       } else {
-        // --- CREATE LOGIC ---
+        // CREATE LOGIC
         await collection.add({
           ...data,
           'postedOn': FieldValue.serverTimestamp(),
@@ -276,7 +296,6 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
       }
 
       if (mounted) {
-        // Pop with 'true' to signal the calling page (detail page) to refresh
         Navigator.pop(context, true); 
       }
     } catch (e) {
@@ -290,13 +309,12 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _uploadProgress = 0;
         });
       }
     }
   }
 
-  // --- Helper to format date/time for display ---
+  // --- Helper to format date/time for display (Unchanged) ---
   String _formatDateTime(DateTime date, TimeOfDay time) {
     final DateTime combined = date.add(Duration(hours: time.hour, minutes: time.minute));
     return DateFormat('MMM d, yyyy @ h:mm a').format(combined);
@@ -405,40 +423,34 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: _pickFile,
+                        onPressed: _isUploading ? null : _pickFile, 
                         icon: const Icon(Icons.attach_file),
-                        label: const Text('Attach File (Optional)'),
+                        label: Text(_isUploading ? 'Uploading...' : 'Attach File (Optional)'),
                       ),
                     ),
                   ],
                 ),
-                if (_pickedFile != null)
+                // Display picked file name only while uploading
+                if (_pickedFile != null && _isUploading) 
                   Padding(
                     padding: const EdgeInsets.only(top: 8.0),
                     child: Row(
                       children: [
                         Icon(Icons.insert_drive_file, color: primaryColor),
                         const SizedBox(width: 8),
-                        Expanded(child: Text(_pickedFile!.name, overflow: TextOverflow.ellipsis)),
-                        IconButton(
-                          icon: const Icon(Icons.close, size: 18),
-                          onPressed: () => setState(() { 
-                            _pickedFile = null; 
-                            _uploadedFileUrl = null; 
-                            _uploadedFileName = null; 
-                          }),
-                        ),
+                        Expanded(child: Text('Uploading: ${_pickedFile!.name}', overflow: TextOverflow.ellipsis)),
                       ],
                     ),
                   )
+                // Display already uploaded file name
                 else if (_uploadedFileUrl != null && _uploadedFileName!.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 8.0),
                     child: Row(
                       children: [
-                        const Icon(Icons.insert_drive_file, color: Colors.green),
+                        const Icon(Icons.check_circle, color: Colors.green),
                         const SizedBox(width: 8),
-                        Expanded(child: Text('Existing File: $_uploadedFileName', overflow: TextOverflow.ellipsis)),
+                        Expanded(child: Text('Attached: $_uploadedFileName', overflow: TextOverflow.ellipsis)),
                         IconButton(
                           icon: const Icon(Icons.close, size: 18),
                           onPressed: () => setState(() { 
@@ -453,7 +465,7 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
                 const SizedBox(height: 40),
 
                 // --- UPLOAD PROGRESS BAR ---
-                if (_isLoading)
+                if (_isUploading)
                   Column(
                     children: [
                       LinearProgressIndicator(value: _uploadProgress.clamp(0.0, 1.0), color: primaryColor),
@@ -468,13 +480,14 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    onPressed: _isLoading ? null : _postAssignment,
-                    icon: _isLoading
+                    onPressed: (_isLoading || _isUploading) ? null : _postAssignment, 
+                    icon: (_isLoading || _isUploading)
                         ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                         : Icon(_isEditing ? Icons.save : Icons.publish),
-                    label: Text(_isLoading 
-                        ? 'Saving...' 
-                        : (_isEditing ? 'Save Changes' : 'Publish Assignment')),
+                    label: Text(
+                        _isUploading 
+                          ? 'Uploading...' 
+                          : (_isLoading ? 'Saving...' : (_isEditing ? 'Save Changes' : 'Publish Assignment'))),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: primaryColor,
                       foregroundColor: Colors.white,
