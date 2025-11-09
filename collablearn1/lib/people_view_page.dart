@@ -1,4 +1,4 @@
-// lib/people_view_page.dart - FINAL FIX: Ensure all UIDs are checked for display AND full refresh
+// lib/people_view_page.dart - FINAL FIX: Pull-to-Refresh Implemented
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -37,12 +37,14 @@ class _PeopleViewPageState extends State<PeopleViewPage> {
      return FirebaseFirestore.instance.collection('classes').doc(widget.classId).get();
   }
 
-  // Method to reload data after navigation pop
-  void _reloadData() {
+  // --- MODIFIED: Return Future<void> for onRefresh ---
+  Future<void> _reloadData() async {
     setState(() {
       _isInstructorFuture = _isCurrentUserInstructor();
       _classDataFuture = _fetchClassData(); // Refresh the class data
     });
+    // Await the completion of the future used in the build method
+    await _classDataFuture; 
   }
 
 
@@ -166,105 +168,111 @@ class _PeopleViewPageState extends State<PeopleViewPage> {
                 students.sort((a, b) => _getUserName(a).compareTo(_getUserName(b)));
 
 
-                return ListView(
-                  padding: const EdgeInsets.all(16.0),
-                  children: [
-                    // --- INSTRUCTOR SECTION ---
-                    Text(
-                      'Instructor${instructors.length > 1 ? 's' : ''}',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: primaryColor),
-                    ),
-                    const Divider(),
-                    ...instructors.map((instructor) {
-                      final String instructorName = _getUserName(instructor);
-                      final String instructorEmail = instructor['email']?.toString() ?? 'N/A';
-                      final String instructorUid = instructor['uid']?.toString() ?? '';
-                      final isPrimary = instructorUid == primaryInstructorId;
-
-                      // Pass null onTap for instructors 
-                      return _buildUserTile(context, instructorName, instructorEmail, instructorUid, true, isPrimary ? const Icon(Icons.star, color: Colors.amber) : null, null);
-                    }).toList(),
-                    
-                    // 1. ADD CO-TEACHER BUTTON (Bottom of Teacher's Section)
-                    if (isInstructor)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8.0, bottom: 30),
-                        child: OutlinedButton.icon(
-                          onPressed: () async { // Make onPressed async
-                            await Navigator.of(context).push( // Await the result
-                              MaterialPageRoute(
-                                builder: (context) => AddCoInstructorPage(classId: widget.classId),
-                              ),
-                            );
-                            _reloadData(); // FIX: Reload data when returning
-                          },
-                          icon: const Icon(Icons.group_add),
-                          label: const Text('Add Co-Teacher'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: primaryColor,
-                            side: BorderSide(color: primaryColor),
-                          ),
-                        ),
+                // --- WRAP LISTVIEW IN REFRESH INDICATOR ---
+                return RefreshIndicator(
+                  onRefresh: _reloadData,
+                  child: ListView(
+                    padding: const EdgeInsets.all(16.0),
+                    physics: const AlwaysScrollableScrollPhysics(), // Important for RefreshIndicator
+                    children: [
+                      // --- INSTRUCTOR SECTION ---
+                      Text(
+                        'Instructor${instructors.length > 1 ? 's' : ''}',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: primaryColor),
                       ),
-                      const SizedBox(height: 30),
+                      const Divider(),
+                      ...instructors.map((instructor) {
+                        final String instructorName = _getUserName(instructor);
+                        final String instructorEmail = instructor['email']?.toString() ?? 'N/A';
+                        final String instructorUid = instructor['uid']?.toString() ?? '';
+                        final isPrimary = instructorUid == primaryInstructorId;
 
-                    // --- STUDENTS SECTION ---
-                    Text(
-                      'Students (${students.length})', 
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: primaryColor),
-                    ),
-                    const Divider(),
-                    
-                    ...students.map((student) {
-                      final String studentName = _getUserName(student);
-                      final String studentEmail = student['email']?.toString() ?? 'N/A';
-                      final String studentUid = student['uid']?.toString() ?? '';
-
-                      return _buildUserTile(
-                        context, 
-                        studentName, 
-                        studentEmail, 
-                        studentUid, 
-                        false, // isInstructor flag: false for students
-                        isInstructor // Only allow navigation if the current user is the course instructor
-                          ? const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.blueGrey)
-                          : null,
-                        isInstructor // Only allow navigation if the current user is the course instructor
-                          ? () {
-                              Navigator.of(context).push(
+                        // Pass null onTap for instructors 
+                        return _buildUserTile(context, instructorName, instructorEmail, instructorUid, true, isPrimary ? const Icon(Icons.star, color: Colors.amber) : null, null);
+                      }).toList(),
+                      
+                      // 1. ADD CO-TEACHER BUTTON (Bottom of Teacher's Section)
+                      if (isInstructor)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8.0, bottom: 30),
+                          child: OutlinedButton.icon(
+                            onPressed: () async { // Make onPressed async
+                              await Navigator.of(context).push( // Await the result
                                 MaterialPageRoute(
-                                  builder: (context) => InstructorStudentReportPage(
-                                    classId: widget.classId,
-                                    studentId: studentUid,
-                                    studentName: studentName,
-                                  ),
+                                  builder: (context) => AddCoInstructorPage(classId: widget.classId),
                                 ),
                               );
-                            } 
-                          : null,
-                      );
-                    }).toList(),
-
-                    // 2. ADD STUDENT BUTTON (Bottom of Student's Section)
-                    if (isInstructor)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 16.0),
-                        child: FilledButton.icon(
-                          onPressed: () async { // Make onPressed async
-                            await Navigator.of(context).push( // Await the result
-                              MaterialPageRoute(
-                                builder: (context) => AddStudentPage(classId: widget.classId),
-                              ),
-                            );
-                            _reloadData(); // FIX: Reload data when returning
-                          },
-                          icon: const Icon(Icons.person_add),
-                          label: const Text('Add Student to Course'),
-                          style: FilledButton.styleFrom(backgroundColor: primaryColor),
+                              _reloadData(); // FIX: Reload data when returning
+                            },
+                            icon: const Icon(Icons.group_add),
+                            label: const Text('Add Co-Teacher'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: primaryColor,
+                              side: BorderSide(color: primaryColor),
+                            ),
+                          ),
                         ),
+                        const SizedBox(height: 30),
+
+                      // --- STUDENTS SECTION ---
+                      Text(
+                        'Students (${students.length})', 
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: primaryColor),
                       ),
-                  ],
+                      const Divider(),
+                      
+                      ...students.map((student) {
+                        final String studentName = _getUserName(student);
+                        final String studentEmail = student['email']?.toString() ?? 'N/A';
+                        final String studentUid = student['uid']?.toString() ?? '';
+
+                        return _buildUserTile(
+                          context, 
+                          studentName, 
+                          studentEmail, 
+                          studentUid, 
+                          false, // isInstructor flag: false for students
+                          isInstructor // Only allow navigation if the current user is the course instructor
+                            ? const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.blueGrey)
+                            : null,
+                          isInstructor // Only allow navigation if the current user is the course instructor
+                            ? () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (context) => InstructorStudentReportPage(
+                                      classId: widget.classId,
+                                      studentId: studentUid,
+                                      studentName: studentName,
+                                    ),
+                                  ),
+                                );
+                              } 
+                            : null,
+                        );
+                      }).toList(),
+
+                      // 2. ADD STUDENT BUTTON (Bottom of Student's Section)
+                      if (isInstructor)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 16.0),
+                          child: FilledButton.icon(
+                            onPressed: () async { // Make onPressed async
+                              await Navigator.of(context).push( // Await the result
+                                MaterialPageRoute(
+                                  builder: (context) => AddStudentPage(classId: widget.classId),
+                                ),
+                              );
+                              _reloadData(); // FIX: Reload data when returning
+                            },
+                            icon: const Icon(Icons.person_add),
+                            label: const Text('Add Student to Course'),
+                            style: FilledButton.styleFrom(backgroundColor: primaryColor),
+                          ),
+                        ),
+                    ],
+                  ),
                 );
+                // --- END REFRESH INDICATOR WRAP ---
               },
             );
           },

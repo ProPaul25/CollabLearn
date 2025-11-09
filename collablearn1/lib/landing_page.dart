@@ -1,15 +1,15 @@
-// lib/landing_page.dart - FIXED
+// lib/landing_page.dart - FIXED with Pull-to-Refresh
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'archived_classes_page.dart';
-import 'edit_profile_page.dart';         // <-- FIX: Changed to relative import
-import 'join_class_page.dart';          // <-- FIX: Changed to relative import
-import 'create_class_page.dart';        // <-- FIX: Changed to relative import
-import 'course_dashboard_page.dart';    // <-- FIX: Changed to relative import
-import 'user_progress_tracker_page.dart'; // <-- FIX: Changed to relative import
+import 'edit_profile_page.dart';         
+import 'join_class_page.dart';          
+import 'create_class_page.dart';        
+import 'course_dashboard_page.dart';    
+import 'user_progress_tracker_page.dart'; 
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -40,22 +40,27 @@ class _LandingPageState extends State<LandingPage> {
   @override
   void initState() {
     super.initState();
+    // No explicit call here; moved to didChangeDependencies for proper lifecycle handling
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    // Initial data load when the widget dependencies change (e.g., first build)
     _loadUserData(); 
   }
 
+  // --- MODIFIED: Load data now returns a Future<void> for RefreshIndicator ---
   Future<void> _loadUserData() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
+      // Set loading state explicitly at the start
+      if (mounted) setState(() => _isClassesLoading = true); 
+
       await user.reload(); 
       final refreshedUser = FirebaseAuth.instance.currentUser;
       
       // NEW FIX: Add a brief wait here for Firestore synchronization on initial sign-in
-      // This helps mitigate the race condition where Auth is fast but Firestore is slow.
       if (refreshedUser?.displayName == null && refreshedUser?.email != null) {
           await Future.delayed(const Duration(milliseconds: 500));
       }
@@ -84,7 +89,7 @@ class _LandingPageState extends State<LandingPage> {
             classIds = List<String>.from(data['enrolledClasses']);
           }
           
-          _fetchEnrolledClasses(classIds); 
+          await _fetchEnrolledClasses(classIds); // Await this to finish loading
         }
       } else if (mounted) {
         setState(() {
@@ -93,9 +98,10 @@ class _LandingPageState extends State<LandingPage> {
           _userRole = "student";
           _profileImageBytes = null;
         });
-        _fetchEnrolledClasses([]);
+        await _fetchEnrolledClasses([]);
       }
     }
+    // ClassesLoading set to false inside _fetchEnrolledClasses finally block
   }
 
   Future<void> _fetchEnrolledClasses(List<dynamic> classIds) async {
@@ -188,7 +194,7 @@ class _LandingPageState extends State<LandingPage> {
                   ),
                 ).then((_) {
                   // Re-fetch classes in case one was unarchived
-                  setState(() {});
+                  _loadUserData();
                 });
               },
             ),
@@ -281,46 +287,51 @@ class _LandingPageState extends State<LandingPage> {
           ],
         ),
       ),
-      body: Column(
-        children: [
-          Expanded(
-            flex: 2,
-            child: Container(
-              decoration: BoxDecoration(
-                image: DecorationImage(
-                  image: const AssetImage('assets/background.jpg'),
-                  fit: BoxFit.cover,
-                  colorFilter: ColorFilter.mode(
-                    Colors.black.withOpacity(widget.isDarkMode ? 0.4 : 0.0),
-                    BlendMode.darken,
+      // --- WRAP THE BODY IN REFRESH INDICATOR ---
+      body: RefreshIndicator(
+        onRefresh: _loadUserData, // Call the data loading function
+        child: Column(
+          children: [
+            Expanded(
+              flex: 2,
+              child: Container(
+                decoration: BoxDecoration(
+                  image: DecorationImage(
+                    image: const AssetImage('assets/background.jpg'),
+                    fit: BoxFit.cover,
+                    colorFilter: ColorFilter.mode(
+                      Colors.black.withOpacity(widget.isDarkMode ? 0.4 : 0.0),
+                      BlendMode.darken,
+                    ),
+                  ),
+                ),
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: _buildProfileCard(),
                   ),
                 ),
               ),
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 8.0),
-                  child: _buildProfileCard(),
+            ),
+            Expanded(
+              flex: 3,
+              child: Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).scaffoldBackgroundColor,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(40.0),
+                    topRight: Radius.circular(40.0),
+                  ),
                 ),
+                child: _buildClassesView(),
               ),
             ),
-          ),
-          Expanded(
-            flex: 3,
-            child: Container(
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: Theme.of(context).scaffoldBackgroundColor,
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(40.0),
-                  topRight: Radius.circular(40.0),
-                ),
-              ),
-              child: _buildClassesView(),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
+      // --- END REFRESH INDICATOR WRAP ---
     );
   }
 
@@ -444,6 +455,7 @@ class _LandingPageState extends State<LandingPage> {
         ),
         Expanded(
           child: ListView.builder(
+            // NOTE: ListView is now scrollable due to RefreshIndicator wrapping the Column
             itemCount: _enrolledClasses.length,
             itemBuilder: (context, index) {
               final classData = _enrolledClasses[index];

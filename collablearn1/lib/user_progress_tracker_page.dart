@@ -1,4 +1,4 @@
-// lib/user_progress_tracker_page.dart - MODIFIED FOR PER-CLASS ATTENDANCE
+// lib/user_progress_tracker_page.dart - MODIFIED FOR PER-CLASS ATTENDANCE & PULL-TO-REFRESH
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -53,10 +53,12 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
   @override
   void initState() {
     super.initState();
-    _fetchPerformanceData();
+    // No explicit call here; will be called in build via FutureBuilder, 
+    // or manually by _fetchPerformanceData to load all data.
+    _fetchPerformanceData(); 
   }
   
-  // --- NEW FUNCTION: Fetch & Calculate Per-Class Attendance ---
+  // --- FUNCTION: Fetch & Calculate Per-Class Attendance ---
   Future<List<ClassAttendanceSummary>> _fetchClassAttendance(String userId, List<dynamic> classIds) async {
     List<ClassAttendanceSummary> summaries = [];
     final firestore = FirebaseFirestore.instance;
@@ -124,12 +126,16 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
   // -----------------------------------------------------------
 
 
+  // --- MODIFIED: Renamed to Future<void> for onRefresh ---
   Future<void> _fetchPerformanceData() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       if (mounted) setState(() => _isLoading = false);
       return;
     }
+    
+    if (mounted) setState(() => _isLoading = true);
+
 
     try {
       // 1. Load User Data (Name and Enrolled Classes)
@@ -228,70 +234,78 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
         backgroundColor: primaryColor,
         foregroundColor: Colors.white,
       ),
+      // --- WRAP SCROLLABLE CONTENT IN REFRESH INDICATOR ---
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // --- Welcome Banner ---
-                  Text(
-                    'Welcome! $_userName',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: primaryColor),
-                  ),
-                  const SizedBox(height: 5),
-                  const Text(
-                    'Ready to achieve your goals today?',
-                    style: TextStyle(fontSize: 16, color: Colors.grey),
-                  ),
-                  const SizedBox(height: 25),
+          : RefreshIndicator(
+              onRefresh: _fetchPerformanceData,
+              child: SingleChildScrollView(
+                // Ensure SingleChildScrollView works with RefreshIndicator
+                physics: const AlwaysScrollableScrollPhysics(), 
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // --- Welcome Banner ---
+                    Text(
+                      'Welcome! $_userName',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: primaryColor),
+                    ),
+                    const SizedBox(height: 5),
+                    const Text(
+                      'Ready to achieve your goals today?',
+                      style: TextStyle(fontSize: 16, color: Colors.grey),
+                    ),
+                    const SizedBox(height: 25),
 
-                  // --- NEW SECTION: Overall Attendance Goal Tracker ---
-                  _buildAttendanceGoalTracker(primaryColor),
-                  const SizedBox(height: 30),
-                  
-                  // --- NEW SECTION: Per-Class Attendance Summary ---
-                  _buildPerClassAttendanceSummary(primaryColor),
-                  const SizedBox(height: 30),
-                  
-                  // --- Quiz Average Card ---
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _buildMetricCard(
-                        context,
-                        title: 'Quiz Average',
-                        value: '$_quizAverage%',
-                        feedback: _quizAverage >= 80 ? 'Excellent work' : 'Keep practicing', 
-                        icon: Icons.quiz_outlined,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 30),
+                    // --- NEW SECTION: Overall Attendance Goal Tracker ---
+                    _buildAttendanceGoalTracker(primaryColor),
+                    const SizedBox(height: 30),
+                    
+                    // --- NEW SECTION: Per-Class Attendance Summary ---
+                    _buildPerClassAttendanceSummary(primaryColor),
+                    const SizedBox(height: 30),
+                    
+                    // --- Quiz Average Card ---
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _buildMetricCard(
+                          context,
+                          title: 'Quiz Average',
+                          value: '$_quizAverage%',
+                          feedback: _quizAverage >= 80 ? 'Excellent work' : 'Keep practicing', 
+                          icon: Icons.quiz_outlined,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 30),
 
-                  // --- Performance Overview (Mid Exams) ---
-                  const Text(
-                    'Performance Overview',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                  ),
-                  const Divider(thickness: 1),
-                  ..._midExamPerformance.map((exam) => _buildExamProgress(
-                        exam['subject'],
-                        exam['score'],
-                        primaryColor,
-                      )),
-                  const SizedBox(height: 30),
+                    // --- Performance Overview (Mid Exams) ---
+                    const Text(
+                      'Performance Overview',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    ),
+                    const Divider(thickness: 1),
+                    ..._midExamPerformance.map((exam) => _buildExamProgress(
+                          exam['subject'],
+                          exam['score'],
+                          primaryColor,
+                        )),
+                    const SizedBox(height: 30),
 
-                  // --- Goal Progress Tracker (Original) ---
-                  _buildGoalProgress(primaryColor),
-                ],
+                    // --- Goal Progress Tracker (Original) ---
+                    _buildGoalProgress(primaryColor),
+                  ],
+                ),
               ),
             ),
+      // --- END REFRESH INDICATOR WRAP ---
     );
   }
 
-  // --- NEW WIDGET: Per-Class Attendance Summary ---
+  // ... (Rest of the helper methods are unchanged) ...
+
   Widget _buildPerClassAttendanceSummary(Color primaryColor) {
     if (_classAttendance.isEmpty) {
       return const SizedBox.shrink();
@@ -428,7 +442,6 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
   // --- END WIDGET: Combined Attendance Goal Tracker ---
 
 
-  // --- MODIFIED _buildMetricCard (Only for Quiz Average) ---
   Widget _buildMetricCard(BuildContext context, {required String title, required String value, required String feedback, required IconData icon}) {
     final bool isPositive = _quizAverage >= 80;
     final Color iconColor = isPositive ? Colors.green : Colors.orange;
@@ -461,7 +474,6 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
       ),
     );
   }
-  // --- END MODIFIED _buildMetricCard ---
 
   Widget _buildExamProgress(String subject, int score, Color primaryColor) {
     return Padding(
