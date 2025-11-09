@@ -10,7 +10,8 @@ class ClassAttendanceSummary {
   final String className;
   final int totalSessions;
   final int attendedSessions;
-  final int percentage;
+  final int? percentage; // Changed to nullable int
+  final String displayPercentage; // New field for UI display
 
   ClassAttendanceSummary({
     required this.classId,
@@ -18,6 +19,7 @@ class ClassAttendanceSummary {
     required this.totalSessions,
     required this.attendedSessions,
     required this.percentage,
+    required this.displayPercentage, // Required new field
   });
 }
 // ---------------------------------------------
@@ -35,6 +37,7 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
 
   // State variables for dynamic metrics
   int _overallAttendancePercentage = 0; // Renamed for clarity
+  String _overallAttendanceDisplay = 'N/A'; // New state for overall display
   int _quizAverage = 0;
   int _goalProgress = 0;
   final int _goalTarget = 85; // Original Target for General Goal
@@ -82,10 +85,12 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
           .get();
       final attendedSessions = attendedRecordsSnapshot.count ?? 0;
       
-      // 4. Calculate Percentage
-      final percentage = totalSessions > 0 
+      // 4. Calculate Percentage (Return null if no sessions were held)
+      final int? percentage = totalSessions > 0 
           ? ((attendedSessions / totalSessions) * 100).round()
-          : 100;
+          : null;
+      
+      final String displayPercentage = percentage == null ? 'N/A' : '$percentage%';
 
       summaries.add(ClassAttendanceSummary(
         classId: classId,
@@ -93,17 +98,24 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
         totalSessions: totalSessions,
         attendedSessions: attendedSessions,
         percentage: percentage,
+        displayPercentage: displayPercentage, // Store the display value
       ));
     }
     
-    // Calculate the overall average based on the fetched data (simple average of percentages)
-    final overallAvg = summaries.isNotEmpty
-      ? (summaries.map((s) => s.percentage).reduce((a, b) => a + b) / summaries.length).round()
-      : 0;
+    // Calculate the overall average based ONLY on classes that have sessions
+    final validPercentages = summaries
+        .where((s) => s.percentage != null)
+        .map((s) => s.percentage!)
+        .toList();
+        
+    final overallAvg = validPercentages.isNotEmpty
+      ? (validPercentages.reduce((a, b) => a + b) / validPercentages.length).round()
+      : null; // Return null if no classes have sessions
       
     if (mounted) {
       setState(() {
-        _overallAttendancePercentage = overallAvg;
+        _overallAttendancePercentage = overallAvg ?? 0;
+        _overallAttendanceDisplay = overallAvg == null ? 'N/A' : '$overallAvg%';
       });
     }
 
@@ -141,7 +153,7 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
       
       // --- MODIFIED STEP: Fetch overall attendance and per-class summary ---
       final classAttendanceSummary = await _fetchClassAttendance(user.uid, classIds);
-      // We rely on _fetchClassAttendance to set _overallAttendancePercentage
+      // We rely on _fetchClassAttendance to set _overallAttendancePercentage and _overallAttendanceDisplay
       
       // 2. Fetch Overall Progress Data from 'progress_tracker'
       final progressDoc = await FirebaseFirestore.instance
@@ -302,8 +314,9 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
   }
   
   Widget _buildClassAttendanceTile(ClassAttendanceSummary summary, Color primaryColor) {
-    final bool isSafe = summary.percentage >= _attendanceTarget;
-    final Color color = isSafe ? Colors.green : Colors.red;
+    // --- FIX: Check for null percentage before calculating isSafe ---
+    final bool isSafe = summary.percentage != null && summary.percentage! >= _attendanceTarget;
+    final Color color = summary.percentage == null ? Colors.grey : (isSafe ? Colors.green : Colors.red);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -313,7 +326,7 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
         leading: CircleAvatar(
           backgroundColor: color.withOpacity(0.1),
           child: Text(
-            '${summary.percentage}%', 
+            summary.displayPercentage, // Use the pre-formatted display string
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: color)
           ),
         ),
@@ -322,11 +335,14 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
           style: const TextStyle(fontWeight: FontWeight.w600),
         ),
         subtitle: Text(
-          'Attended ${summary.attendedSessions} of ${summary.totalSessions} sessions.',
+          // Display session count only if sessions exist
+          summary.totalSessions > 0 
+            ? 'Attended ${summary.attendedSessions} of ${summary.totalSessions} sessions.'
+            : 'No attendance sessions held.',
           style: const TextStyle(color: Colors.grey),
         ),
         trailing: Icon(
-          isSafe ? Icons.check_circle : Icons.warning,
+          summary.percentage == null ? Icons.info_outline : (isSafe ? Icons.check_circle : Icons.warning),
           color: color,
         ),
       ),
@@ -337,11 +353,21 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
 
   // --- WIDGET: Combined Attendance Goal Tracker (Renamed from _attendancePercentage to _overallAttendancePercentage) ---
   Widget _buildAttendanceGoalTracker(Color primaryColor) {
-    final bool isSafe = _overallAttendancePercentage >= _attendanceTarget;
-    final Color progressColor = isSafe ? Colors.green : Colors.red;
-    final String feedback = isSafe 
-        ? '✅ Excellent! Your attendance is above the required minimum.' 
-        : '⚠️ Warning: You need to attend more classes to reach the 70% minimum.';
+    // --- FIX: Check if overall data is N/A ---
+    final bool isDataAvailable = _overallAttendanceDisplay != 'N/A';
+    final int percentage = _overallAttendancePercentage;
+    final bool isSafe = percentage >= _attendanceTarget;
+    final Color progressColor = isDataAvailable ? (isSafe ? Colors.green : Colors.red) : Colors.grey;
+    final String feedback;
+    
+    if (!isDataAvailable) {
+        feedback = 'ℹ️ Data N/A: No attendance sessions have been held across your enrolled classes yet.';
+    } else {
+        feedback = isSafe 
+            ? '✅ Excellent! Your attendance is above the required minimum.' 
+            : '⚠️ Warning: You need to attend more classes to reach the 70% minimum.';
+    }
+    // ------------------------------------------
         
     return Card(
       elevation: 4,
@@ -362,14 +388,15 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
                       width: 80,
                       height: 80,
                       child: CircularProgressIndicator(
-                        value: (_overallAttendancePercentage / 100.0).clamp(0.0, 1.0),
+                        // Value is 0.0 if N/A, otherwise the actual ratio
+                        value: isDataAvailable ? (percentage / 100.0).clamp(0.0, 1.0) : 0.0, 
                         backgroundColor: Colors.grey[200],
                         valueColor: AlwaysStoppedAnimation<Color>(progressColor),
                         strokeWidth: 8,
                       ),
                     ),
                     Text(
-                      '$_overallAttendancePercentage%', 
+                      _overallAttendanceDisplay, // Use the new display string
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: progressColor)
                     ), 
                   ],
@@ -386,7 +413,7 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
                       const SizedBox(height: 5),
                       Text(
                         feedback,
-                        style: TextStyle(fontSize: 14, color: isSafe ? Colors.green.shade700 : Colors.red.shade700),
+                        style: TextStyle(fontSize: 14, color: isDataAvailable ? (isSafe ? Colors.green.shade700 : Colors.red.shade700) : Colors.grey.shade700),
                       ),
                     ],
                   ),

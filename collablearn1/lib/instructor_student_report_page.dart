@@ -96,9 +96,10 @@ class _InstructorStudentReportPageState extends State<InstructorStudentReportPag
         .get();
     final attendedSessions = attendedRecordsSnapshot.count ?? 0;
 
-    final percentage = totalSessions > 0
+    // --- FIX: Return null if no sessions were held ---
+    final num? percentage = totalSessions > 0
         ? ((attendedSessions / totalSessions) * 100).round()
-        : 100;
+        : null;
 
     return {
       'totalSessions': totalSessions,
@@ -107,7 +108,7 @@ class _InstructorStudentReportPageState extends State<InstructorStudentReportPag
     };
   }
 
-  Future<List<Map<String, dynamic>>> _fetchQuizData() async {
+  Future<Map<String, dynamic>> _fetchQuizData() async {
     // 1. Get all Quizzes for the class
     final quizzesSnapshot = await firestore
         .collection('quizzes')
@@ -117,9 +118,14 @@ class _InstructorStudentReportPageState extends State<InstructorStudentReportPag
 
     final List<Map<String, dynamic>> quizReports = [];
 
+    // Local accumulation variables
+    num totalQuizMaxScore = 0;
+    num totalQuizGainedScore = 0;
+
     for (var quizDoc in quizzesSnapshot.docs) {
       final quizData = quizDoc.data();
       final quizId = quizDoc.id;
+      final maxScore = quizData['totalPoints'] ?? 0;
 
       // 2. Try to get the student's submission
       final submissionDoc = await firestore
@@ -129,17 +135,15 @@ class _InstructorStudentReportPageState extends State<InstructorStudentReportPag
           .doc(widget.studentId)
           .get();
 
-      // --- FIX: Explicitly check .exists and safely access data ---
       final isSubmitted = submissionDoc.exists;
-      
-      // Get the submission data map only if it exists
       final submissionData = submissionDoc.data();
-      
-      // Safely access score using the checked data map
       final score = isSubmitted && submissionData != null ? submissionData['score'] : null;
-      // -------------------------------------------------------------
+      final isGraded = score != null;
       
-      final maxScore = quizData['totalPoints'] ?? 0;
+      if (isGraded) {
+          totalQuizMaxScore += (maxScore as num);
+          totalQuizGainedScore += (score as num);
+      }
 
       quizReports.add({
         'title': quizData['title'] ?? 'Untitled Quiz',
@@ -148,12 +152,20 @@ class _InstructorStudentReportPageState extends State<InstructorStudentReportPag
         'isSubmitted': isSubmitted,
         'score': score,
         'maxScore': maxScore,
-        'scoreDisplay': isSubmitted ? (score != null ? '$score / $maxScore' : 'Submitted') : 'Missing',
-        'isGraded': score != null,
+        'scoreDisplay': isSubmitted ? (isGraded ? '$score / $maxScore' : 'Submitted') : 'Missing',
+        'isGraded': isGraded,
       });
     }
 
-    return quizReports;
+    // --- FIX: Return null if total possible points is zero ---
+    final int? quizPercentage = totalQuizMaxScore > 0 
+      ? ((totalQuizGainedScore / totalQuizMaxScore) * 100).round()
+      : null;
+
+    return {
+      'reports': quizReports,
+      'overallQuizPercentage': quizPercentage, // New overall percentage field
+    };
   }
   
   Future<Map<String, dynamic>> _fetchAssignmentData() async {
@@ -213,19 +225,17 @@ class _InstructorStudentReportPageState extends State<InstructorStudentReportPag
       });
     }
     
-    // Calculate overall percentage for submitted assignments
-    final overallGainedPercentage = totalPossiblePointsSubmitted > 0
+    // --- FIX: Return null if total possible points is zero ---
+    final int? overallGainedPercentage = totalPossiblePointsSubmitted > 0
         ? ((totalGainedPoints / totalPossiblePointsSubmitted) * 100).round()
-        : 100;
+        : null;
 
 
     return {
       'reports': assignmentReports,
       'submittedCount': submittedCount,
       'totalAssignments': totalAssignments,
-      'totalPossiblePointsSubmitted': totalPossiblePointsSubmitted,
-      'totalGainedPoints': totalGainedPoints,
-      'overallGainedPercentage': overallGainedPercentage,
+      'overallGainedPercentage': overallGainedPercentage, // Now nullable
     };
   }
 
@@ -300,24 +310,27 @@ class _InstructorStudentReportPageState extends State<InstructorStudentReportPag
 
   Widget _buildOverallMetrics(Color primaryColor) {
     final attendance = _reportData['attendance'] as Map<String, dynamic>;
+    final quizzes = _reportData['quizzes'] as Map<String, dynamic>;
     final assignments = _reportData['assignments'] as Map<String, dynamic>;
     
-    final int attendancePercentage = attendance['percentage'] ?? 0;
+    // --- Attendance Handling ---
+    final int? attendancePercentageNullable = attendance['percentage'] as int?;
+    final int attendancePercentage = attendancePercentageNullable ?? 0;
     final bool attendanceSafe = attendancePercentage >= _attendanceTarget;
     final Color attColor = attendanceSafe ? Colors.green : Colors.red;
+    final String attDisplay = attendancePercentageNullable == null ? 'N/A' : '$attendancePercentage%';
 
-    final int assignmentGainedPercentage = assignments['overallGainedPercentage'] ?? 0;
-    final Color assignColor = assignmentGainedPercentage > 75 ? Colors.green : (assignmentGainedPercentage > 50 ? Colors.orange : Colors.red);
-    
-    final quizzes = _reportData['quizzes'] as List<Map<String, dynamic>>;
-    final gradedQuizzes = quizzes.where((q) => q['isGraded']).toList();
-    
-    // Use num to handle potential Firestore number types gracefully
-    num totalQuizMaxScore = gradedQuizzes.map((q) => q['maxScore'] as num).fold(0, (a, b) => a + b);
-    num totalQuizGainedScore = gradedQuizzes.map((q) => (q['score'] as num)).fold(0, (a, b) => a + b);
-    
-    final quizPercentage = totalQuizMaxScore > 0 ? ((totalQuizGainedScore / totalQuizMaxScore) * 100).round() : 100;
+    // --- Quiz Handling ---
+    final int? quizPercentageNullable = quizzes['overallQuizPercentage'] as int?;
+    final int quizPercentage = quizPercentageNullable ?? 0;
     final Color quizColor = quizPercentage > 75 ? Colors.green : (quizPercentage > 50 ? Colors.orange : Colors.red);
+    final String quizDisplay = quizPercentageNullable == null ? 'N/A' : '$quizPercentage%';
+    
+    // --- Assignment Handling ---
+    final int? assignmentGainedPercentageNullable = assignments['overallGainedPercentage'] as int?;
+    final int assignmentGainedPercentage = assignmentGainedPercentageNullable ?? 0;
+    final Color assignColor = assignmentGainedPercentage > 75 ? Colors.green : (assignmentGainedPercentage > 50 ? Colors.orange : Colors.red);
+    final String assignDisplay = assignmentGainedPercentageNullable == null ? 'N/A' : '$assignmentGainedPercentage%';
 
 
     return Card(
@@ -333,9 +346,9 @@ class _InstructorStudentReportPageState extends State<InstructorStudentReportPag
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildStatCircle('Attendance', '$attendancePercentage%', attColor),
-                _buildStatCircle('Quiz Score', '$quizPercentage%', quizColor),
-                _buildStatCircle('Assignment', '$assignmentGainedPercentage%', assignColor),
+                _buildStatCircle('Attendance', attDisplay, attColor), 
+                _buildStatCircle('Quiz Score', quizDisplay, quizColor),
+                _buildStatCircle('Assignment', assignDisplay, assignColor),
               ],
             ),
           ],
@@ -345,6 +358,9 @@ class _InstructorStudentReportPageState extends State<InstructorStudentReportPag
   }
 
   Widget _buildStatCircle(String title, String value, Color color) {
+    // Determine the progress value for the circle, or 0.0 if N/A
+    final double progressValue = value == 'N/A' ? 0.0 : double.tryParse(value.replaceAll('%', ''))! / 100.0;
+    
     return Column(
       children: [
         Stack(
@@ -354,7 +370,7 @@ class _InstructorStudentReportPageState extends State<InstructorStudentReportPag
               width: 70,
               height: 70,
               child: CircularProgressIndicator(
-                value: double.tryParse(value.replaceAll('%', ''))! / 100.0,
+                value: progressValue.clamp(0.0, 1.0),
                 backgroundColor: color.withOpacity(0.2),
                 valueColor: AlwaysStoppedAnimation<Color>(color),
                 strokeWidth: 5,
@@ -371,11 +387,34 @@ class _InstructorStudentReportPageState extends State<InstructorStudentReportPag
 
   Widget _buildAttendanceReportSection(Color primaryColor) {
     final attendance = _reportData['attendance'] as Map<String, dynamic>;
-    final percentage = attendance['percentage'] ?? 0;
-    final attended = attendance['attendedSessions'] ?? 0;
-    final total = attendance['totalSessions'] ?? 0;
-    final isSafe = percentage >= _attendanceTarget;
-    final color = isSafe ? Colors.green : Colors.red;
+    final int? percentageNullable = attendance['percentage'] as int?;
+    final int attended = attendance['attendedSessions'] ?? 0;
+    final int total = attendance['totalSessions'] ?? 0;
+    
+    // --- FIX: Handle null percentage ---
+    if (percentageNullable == null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Attendance Report', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: primaryColor)),
+          const Divider(),
+          Card(
+            elevation: 2,
+            color: Colors.grey.withOpacity(0.08),
+            child: const ListTile(
+              leading: Icon(Icons.info_outline, color: Colors.grey, size: 30),
+              title: Text('N/A - No Attendance Sessions Held'),
+              subtitle: Text('The instructor has not created any sessions for this class yet.'),
+            ),
+          ),
+        ],
+      );
+    }
+    
+    final int percentage = percentageNullable;
+    final bool isSafe = percentage >= _attendanceTarget;
+    final Color color = isSafe ? Colors.green : Colors.red;
+    // ----------------------------------
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -403,14 +442,21 @@ class _InstructorStudentReportPageState extends State<InstructorStudentReportPag
   }
 
   Widget _buildQuizReportSection(Color primaryColor) {
-    final quizzes = _reportData['quizzes'] as List<Map<String, dynamic>>;
+    final quizzesData = _reportData['quizzes'] as Map<String, dynamic>;
+    final quizzes = quizzesData['reports'] as List<Map<String, dynamic>>;
+    final int? overallPercentageNullable = quizzesData['overallQuizPercentage'] as int?;
+    
     final submittedCount = quizzes.where((q) => q['isSubmitted']).length;
     final totalCount = quizzes.length;
+    
+    // --- FIX: Handle null overall percentage ---
+    final String overallDisplay = overallPercentageNullable == null ? 'N/A' : '$overallPercentageNullable% Scored';
     
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Quiz Performance ($submittedCount/$totalCount Attended)', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: primaryColor)),
+        Text('Quiz Performance ($submittedCount/$totalCount Attended, $overallDisplay)', 
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: primaryColor)),
         const Divider(),
         if (quizzes.isEmpty)
           const Center(child: Text('No quizzes posted yet for this course.'))
@@ -459,13 +505,17 @@ class _InstructorStudentReportPageState extends State<InstructorStudentReportPag
     final assignmentReports = assignmentsData['reports'] as List<Map<String, dynamic>>;
     final submittedCount = assignmentsData['submittedCount'];
     final totalAssignments = assignmentsData['totalAssignments'];
-    final overallGainedPercentage = assignmentsData['overallGainedPercentage'];
+    final int? overallGainedPercentageNullable = assignmentsData['overallGainedPercentage'] as int?;
+
+    // --- FIX: Handle null overall percentage ---
+    final String overallDisplay = overallGainedPercentageNullable == null ? 'N/A' : '$overallGainedPercentageNullable% Gained';
+
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Assignment Performance ($submittedCount/$totalAssignments Submitted, $overallGainedPercentage% Gained)', 
+          'Assignment Performance ($submittedCount/$totalAssignments Submitted, $overallDisplay)', 
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: primaryColor)
         ),
         const Divider(),
@@ -514,4 +564,4 @@ class _InstructorStudentReportPageState extends State<InstructorStudentReportPag
       ),
     );
   }
-}
+} 

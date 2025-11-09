@@ -51,12 +51,6 @@ class AttendanceManagementPage extends StatelessWidget {
 // lib/attendance_management_page.dart (InstructorAttendanceView)
 
 // =================================================================
-// INSTRUCTOR VIEW (Management) - STABLE VERSION
-// Note: Changed from StatefulWidget to StatelessWidget
-// =================================================================
-// lib/attendance_management_page.dart (InstructorAttendanceView)
-
-// =================================================================
 // INSTRUCTOR VIEW (Management) - STABLE & CORRECTED VERSION
 // =================================================================
 class InstructorAttendanceView extends StatelessWidget {
@@ -252,7 +246,12 @@ class StudentAttendanceView extends StatelessWidget {
                   
                   // --- FIX: Use the real total session count ---
                   final totalSessions = totalSessionsSnapshot.data ?? 0; 
-                  final attendancePercentage = totalSessions > 0 ? (totalPresent / totalSessions * 100).toStringAsFixed(0) : '100';
+                  
+                  // --- FIX: Calculate percentage carefully for N/A display ---
+                  final String attendancePercentageDisplay = totalSessions > 0 
+                      ? (totalPresent / totalSessions * 100).toStringAsFixed(0)
+                      : 'N/A';
+                  // -----------------------------------------------------------
 
 
                   return ListView(
@@ -269,7 +268,7 @@ class StudentAttendanceView extends StatelessWidget {
                               const SizedBox(height: 10),
                               Text('Total Classes Attended: $totalPresent', style: const TextStyle(fontSize: 16)),
                               Text('Total Sessions Held: $totalSessions', style: const TextStyle(fontSize: 16)),
-                              Text('Attendance Percentage: $attendancePercentage%', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                              Text('Attendance Percentage: $attendancePercentageDisplay%', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                             ],
                           ),
                         ),
