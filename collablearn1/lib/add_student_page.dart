@@ -1,4 +1,4 @@
-// lib/add_student_page.dart - FIXED FOR USER ENROLLMENT
+// lib/add_student_page.dart - FIXED FOR USER ENROLLMENT AND BUTTON STATE
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -24,8 +24,26 @@ class _AddStudentPageState extends State<AddStudentPage> {
   @override
   void initState() {
     super.initState();
+    // FIX: Add listener to email controller to trigger rebuilds for button state
+    _emailController.addListener(_onEmailChanged);
     _loadCurrentStudents();
   }
+  
+  @override
+  void dispose() {
+    _emailController.removeListener(_onEmailChanged);
+    _emailController.dispose();
+    super.dispose();
+  }
+  
+  void _onEmailChanged() {
+    // Force a rebuild only if the loading state changes or emptiness changes.
+    // This makes the button enable/disable dynamically.
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
 
   Future<void> _loadCurrentStudents() async {
     final classDoc = await FirebaseFirestore.instance.collection('classes').doc(widget.classId).get();
@@ -158,13 +176,14 @@ class _AddStudentPageState extends State<AddStudentPage> {
                     ? const Padding(padding: EdgeInsets.all(10), child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)))
                     : IconButton(
                         icon: const Icon(Icons.search),
-                        onPressed: _searchUserByEmail,
+                        onPressed: _emailController.text.trim().isNotEmpty && !_isLoading ? _searchUserByEmail : null, // FIX APPLIED HERE
                       ),
               ),
             ),
             const SizedBox(height: 10),
             ElevatedButton(
-              onPressed: _emailController.text.trim().isEmpty || _isLoading ? null : _searchUserByEmail,
+              // FIX APPLIED HERE
+              onPressed: _emailController.text.trim().isNotEmpty && !_isLoading ? _searchUserByEmail : null,
               child: const Text('Search User'),
             ),
             

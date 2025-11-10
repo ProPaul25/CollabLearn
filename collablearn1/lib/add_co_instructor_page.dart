@@ -1,4 +1,4 @@
-// lib/add_co_instructor_page.dart - FINAL FIX: Forcing Fresh Data on Search
+// lib/add_co_instructor_page.dart - FINAL FIX: Forcing Fresh Data on Search and fixing button state
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -24,6 +24,21 @@ class _AddCoInstructorPageState extends State<AddCoInstructorPage> {
   @override
   void initState() {
     super.initState();
+    // FIX: Add listener to email controller to trigger rebuilds for button state
+    _emailController.addListener(_onEmailChanged);
+  }
+  
+  @override
+  void dispose() {
+    _emailController.removeListener(_onEmailChanged);
+    _emailController.dispose();
+    super.dispose();
+  }
+  
+  void _onEmailChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
   
   // Helper to get ALL current instructor UIDs AND the class document
@@ -223,13 +238,14 @@ class _AddCoInstructorPageState extends State<AddCoInstructorPage> {
                     ? const Padding(padding: EdgeInsets.all(10), child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)))
                     : IconButton(
                         icon: const Icon(Icons.search),
-                        onPressed: _searchUserByEmail,
+                        onPressed: _emailController.text.trim().isNotEmpty && !_isLoading ? _searchUserByEmail : null, // FIX APPLIED HERE
                       ),
               ),
             ),
             const SizedBox(height: 10),
             ElevatedButton(
-              onPressed: _emailController.text.trim().isEmpty || _isLoading ? null : _searchUserByEmail,
+              // FIX APPLIED HERE
+              onPressed: _emailController.text.trim().isNotEmpty && !_isLoading ? _searchUserByEmail : null,
               child: const Text('Search User'),
             ),
             
