@@ -1,15 +1,15 @@
-// lib/landing_page.dart - FIXED with Pull-to-Refresh
+// lib/landing_page.dart - FIXED with Pull-to-Refresh AND Combined Class Lists
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'archived_classes_page.dart';
-import 'edit_profile_page.dart';         
-import 'join_class_page.dart';          
-import 'create_class_page.dart';        
-import 'course_dashboard_page.dart';    
-import 'user_progress_tracker_page.dart'; 
+import 'edit_profile_page.dart';
+import 'join_class_page.dart';
+import 'create_class_page.dart';
+import 'course_dashboard_page.dart';
+import 'user_progress_tracker_page.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -33,7 +33,7 @@ class _LandingPageState extends State<LandingPage> {
   String _userEmail = "";
   String _userRole = "";
   Uint8List? _profileImageBytes;
-  
+
   List<Map<String, dynamic>> _enrolledClasses = [];
   bool _isClassesLoading = true;
 
@@ -47,7 +47,7 @@ class _LandingPageState extends State<LandingPage> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     // Initial data load when the widget dependencies change (e.g., first build)
-    _loadUserData(); 
+    _loadUserData();
   }
 
   // --- MODIFIED: Load data now returns a Future<void> for RefreshIndicator ---
@@ -55,26 +55,27 @@ class _LandingPageState extends State<LandingPage> {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       // Set loading state explicitly at the start
-      if (mounted) setState(() => _isClassesLoading = true); 
+      if (mounted) setState(() => _isClassesLoading = true);
 
-      await user.reload(); 
+      await user.reload();
       final refreshedUser = FirebaseAuth.instance.currentUser;
-      
+
       // NEW FIX: Add a brief wait here for Firestore synchronization on initial sign-in
       if (refreshedUser?.displayName == null && refreshedUser?.email != null) {
-          await Future.delayed(const Duration(milliseconds: 500));
+        await Future.delayed(const Duration(milliseconds: 500));
       }
 
-      final userDoc = await FirebaseFirestore.instance.collection('users').doc(refreshedUser!.uid).get();
-      
-      List<dynamic> classIds = []; 
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(refreshedUser!.uid)
+          .get();
 
       if (userDoc.exists) {
         final data = userDoc.data();
         if (data != null && mounted) {
           setState(() {
             _userName = "${data['firstName'] ?? ''} ${data['lastName'] ?? ''}";
-            _userEmail = refreshedUser.email ?? data['email'] ?? ''; 
+            _userEmail = refreshedUser.email ?? data['email'] ?? '';
             _userRole = data['role'] ?? 'student';
 
             String? imageBase64 = data['profileImageBase64'];
@@ -84,11 +85,27 @@ class _LandingPageState extends State<LandingPage> {
               _profileImageBytes = null;
             }
           });
-          
-          if (data.containsKey('enrolledClasses') && data['enrolledClasses'] is List) {
-            classIds = List<String>.from(data['enrolledClasses']);
+
+          // --- START OF FIX ---
+          // Use a Set to gather unique class IDs
+          final classIdsSet = <String>{};
+
+          // 1. Add enrolled classes (for students)
+          if (data.containsKey('enrolledClasses') &&
+              data['enrolledClasses'] is List) {
+            classIdsSet.addAll(List<String>.from(data['enrolledClasses']));
           }
-          
+
+          // 2. Add instructed classes (for instructors/co-instructors)
+          if (data.containsKey('instructedClasses') &&
+              data['instructedClasses'] is List) {
+            classIdsSet.addAll(List<String>.from(data['instructedClasses']));
+          }
+
+          // Convert the Set back to a List for the query
+          final classIds = classIdsSet.toList();
+          // --- END OF FIX ---
+
           await _fetchEnrolledClasses(classIds); // Await this to finish loading
         }
       } else if (mounted) {
@@ -106,44 +123,48 @@ class _LandingPageState extends State<LandingPage> {
 
   Future<void> _fetchEnrolledClasses(List<dynamic> classIds) async {
     if (classIds.isEmpty) {
-      if (mounted) setState(() {
-        _enrolledClasses = [];
-        _isClassesLoading = false;
-      });
+      if (mounted)
+        setState(() {
+          _enrolledClasses = [];
+          _isClassesLoading = false;
+        });
       return;
     }
 
     try {
-      if (mounted) setState(() => _isClassesLoading = true); 
+      if (mounted) setState(() => _isClassesLoading = true);
 
       // 1. KEEP THE FIRESTORE QUERY SIMPLE (NO 'isArchived' FILTER HERE)
       final classesSnapshot = await FirebaseFirestore.instance
           .collection('classes')
-          .where(FieldPath.documentId, whereIn: classIds.sublist(0, classIds.length > 10 ? 10 : classIds.length))
+          .where(FieldPath.documentId,
+              whereIn: classIds.sublist(
+                  0, classIds.length > 10 ? 10 : classIds.length))
           .get();
 
       // 2. Map and filter locally in Dart
       final allClasses = classesSnapshot.docs.map((doc) {
         final data = doc.data();
-        data['classId'] = doc.id; 
+        data['classId'] = doc.id;
         return data;
       }).toList();
-      
-      final filteredClasses = allClasses.where((c) => c['isArchived'] != true).toList(); 
+
+      final filteredClasses =
+          allClasses.where((c) => c['isArchived'] != true).toList();
 
       if (mounted) {
         setState(() {
           // Set the state with the filtered list
-          _enrolledClasses = filteredClasses; 
+          _enrolledClasses = filteredClasses;
         });
       }
     } catch (e) {
       debugPrint('Error fetching enrolled classes: $e');
-      if (mounted) setState(() => _enrolledClasses = []); 
+      if (mounted) setState(() => _enrolledClasses = []);
     } finally {
       if (mounted) setState(() => _isClassesLoading = false);
     }
-}
+  }
 
   Future<void> _logout() async {
     await FirebaseAuth.instance.signOut();
@@ -160,9 +181,8 @@ class _LandingPageState extends State<LandingPage> {
       accountEmail: Text(_userEmail),
       currentAccountPicture: CircleAvatar(
         backgroundColor: Colors.white,
-        backgroundImage: _profileImageBytes != null
-            ? MemoryImage(_profileImageBytes!)
-            : null,
+        backgroundImage:
+            _profileImageBytes != null ? MemoryImage(_profileImageBytes!) : null,
         child: _profileImageBytes == null
             ? const Icon(Icons.person, size: 40, color: Colors.grey)
             : null,
@@ -178,35 +198,57 @@ class _LandingPageState extends State<LandingPage> {
     // Instructor Menu
     if (_userRole == 'instructor' || _userRole == 'Co-Instructor') {
       return [
-        ListTile(leading: const Icon(Icons.class_outlined), title: const Text('My Classes'), onTap: () => Navigator.pop(context)),
-        ListTile(leading: const Icon(Icons.add_box_outlined), title: const Text('Create Class'), onTap: () {
-          Navigator.pop(context); 
-          Navigator.push(context, MaterialPageRoute(builder: (context) => const CreateClassPage())); 
-        }),
         ListTile(
-              leading: const Icon(Icons.archive),
-              title: const Text('Archived Classes'),
-              onTap: () {
-                Navigator.pop(context); // Close the drawer
-                Navigator.of(context).push(
+            leading: const Icon(Icons.class_outlined),
+            title: const Text('My Classes'),
+            onTap: () => Navigator.pop(context)),
+        ListTile(
+            leading: const Icon(Icons.add_box_outlined),
+            title: const Text('Create Class'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                  context,
                   MaterialPageRoute(
-                    builder: (context) => const ArchivedClassesPage(), // Navigate to the new page
-                  ),
-                ).then((_) {
-                  // Re-fetch classes in case one was unarchived
-                  _loadUserData();
-                });
-              },
-            ),
-        ListTile(leading: const Icon(Icons.people_alt_outlined), title: const Text('Student Management'), onTap: () => Navigator.pop(context)),
+                      builder: (context) => const CreateClassPage()));
+            }),
+        ListTile(
+          leading: const Icon(Icons.archive),
+          title: const Text('Archived Classes'),
+          onTap: () {
+            Navigator.pop(context); // Close the drawer
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (context) =>
+                    const ArchivedClassesPage(), // Navigate to the new page
+              ),
+            )
+                .then((_) {
+              // Re-fetch classes in case one was unarchived
+              _loadUserData();
+            });
+          },
+        ),
+        ListTile(
+            leading: const Icon(Icons.people_alt_outlined),
+            title: const Text('Student Management'),
+            onTap: () => Navigator.pop(context)),
       ];
-    } else { // Student Menu
+    } else {
+      // Student Menu
       return [
-        ListTile(leading: const Icon(Icons.class_outlined), title: const Text('My Classes'), onTap: () => Navigator.pop(context)),
-        ListTile(leading: const Icon(Icons.person_add_alt_1_outlined), title: const Text('Join Class'), onTap: () {
-          Navigator.pop(context); 
-          Navigator.push(context, MaterialPageRoute(builder: (context) => const JoinClassPage()));
-        }),
+        ListTile(
+            leading: const Icon(Icons.class_outlined),
+            title: const Text('My Classes'),
+            onTap: () => Navigator.pop(context)),
+        ListTile(
+            leading: const Icon(Icons.person_add_alt_1_outlined),
+            title: const Text('Join Class'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(context,
+                  MaterialPageRoute(builder: (context) => const JoinClassPage()));
+            }),
       ];
     }
   }
@@ -217,8 +259,8 @@ class _LandingPageState extends State<LandingPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('HOME'),
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor, 
-        elevation: 1, 
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        elevation: 1,
         actions: [
           IconButton(
             icon: Icon(
@@ -244,13 +286,14 @@ class _LandingPageState extends State<LandingPage> {
             ..._buildMenuItems(),
             const Divider(),
             ListTile(
-              leading: const Icon(Icons.show_chart), 
+              leading: const Icon(Icons.show_chart),
               title: const Text('Performance Report'),
               onTap: () {
-                Navigator.pop(context); 
+                Navigator.pop(context);
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const UserProgressTrackerPage()),
+                  MaterialPageRoute(
+                      builder: (context) => const UserProgressTrackerPage()),
                 );
               },
             ),
@@ -258,7 +301,7 @@ class _LandingPageState extends State<LandingPage> {
               leading: const Icon(Icons.edit_note),
               title: const Text('Edit Profile'),
               onTap: () {
-                Navigator.pop(context); 
+                Navigator.pop(context);
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => const EditProfilePage()),
@@ -268,7 +311,8 @@ class _LandingPageState extends State<LandingPage> {
               },
             ),
             ListTile(
-              leading: Icon(widget.isDarkMode ? Icons.light_mode : Icons.dark_mode),
+              leading:
+                  Icon(widget.isDarkMode ? Icons.light_mode : Icons.dark_mode),
               title: const Text('Toggle Theme'),
               onTap: () {
                 widget.onToggleTheme();
@@ -278,7 +322,8 @@ class _LandingPageState extends State<LandingPage> {
             const Divider(),
             ListTile(
               leading: const Icon(Icons.logout, color: Colors.red),
-              title: const Text('Sign Out', style: TextStyle(color: Colors.red)),
+              title:
+                  const Text('Sign Out', style: TextStyle(color: Colors.red)),
               onTap: () {
                 _logout();
                 Navigator.pop(context);
@@ -369,7 +414,8 @@ class _LandingPageState extends State<LandingPage> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
@@ -391,23 +437,23 @@ class _LandingPageState extends State<LandingPage> {
                         Text(
                           _userName,
                           style: const TextStyle(
-                            fontSize: 20, 
+                            fontSize: 20,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                         const SizedBox(height: 4),
                         Text(
                           _userEmail,
-                          style: const TextStyle(color: Colors.grey, fontSize: 14),
+                          style:
+                              const TextStyle(color: Colors.grey, fontSize: 14),
                         ),
                         const SizedBox(height: 2),
                         Text(
                           _userRole,
                           style: TextStyle(
-                            color: Colors.grey.shade600,
-                            fontSize: 14,
-                            fontStyle: FontStyle.italic
-                          ),
+                              color: Colors.grey.shade600,
+                              fontSize: 14,
+                              fontStyle: FontStyle.italic),
                         ),
                       ],
                     ),
@@ -436,7 +482,7 @@ class _LandingPageState extends State<LandingPage> {
     if (_isClassesLoading) {
       return const Center(child: CircularProgressIndicator());
     }
-    
+
     if (_enrolledClasses.isEmpty) {
       return _buildNoClassesView();
     }
@@ -467,14 +513,16 @@ class _LandingPageState extends State<LandingPage> {
     );
   }
 
-  Widget _buildClassListItem(BuildContext context, Map<String, dynamic> classData) {
+  Widget _buildClassListItem(
+      BuildContext context, Map<String, dynamic> classData) {
     // ... (This method is unchanged) ...
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       elevation: 3,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
       child: ListTile(
-        leading: Icon(Icons.class_, color: Theme.of(context).colorScheme.primary),
+        leading:
+            Icon(Icons.class_, color: Theme.of(context).colorScheme.primary),
         title: Text(
           classData['className'] ?? 'Unnamed Class',
           style: const TextStyle(fontWeight: FontWeight.bold),
@@ -493,7 +541,7 @@ class _LandingPageState extends State<LandingPage> {
                 classCode: classData['classCode'],
               ),
             ),
-          ); 
+          );
         },
       ),
     );
@@ -534,7 +582,8 @@ class _LandingPageState extends State<LandingPage> {
         width: double.infinity,
         child: Container(
           decoration: BoxDecoration(
-            gradient: const LinearGradient(colors: [Colors.pinkAccent, Colors.purpleAccent]),
+            gradient: const LinearGradient(
+                colors: [Colors.pinkAccent, Colors.purpleAccent]),
             borderRadius: BorderRadius.circular(30),
           ),
           child: Container(
@@ -547,7 +596,10 @@ class _LandingPageState extends State<LandingPage> {
               color: Colors.transparent,
               child: InkWell(
                 onTap: () {
-                  Navigator.push(context, MaterialPageRoute(builder: (context) => const CreateClassPage())); 
+                  Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (context) => const CreateClassPage()));
                 },
                 borderRadius: BorderRadius.circular(30),
                 child: const Center(
@@ -579,7 +631,8 @@ class _LandingPageState extends State<LandingPage> {
         width: double.infinity,
         child: ElevatedButton(
           onPressed: () {
-            Navigator.push(context, MaterialPageRoute(builder: (context) => const JoinClassPage())); 
+            Navigator.push(context,
+                MaterialPageRoute(builder: (context) => const JoinClassPage()));
           },
           style: ElevatedButton.styleFrom(
             backgroundColor: Theme.of(context).colorScheme.primary,
