@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart'; 
 import 'package:cloudinary_public/cloudinary_public.dart'; 
+import 'package:flutter/foundation.dart' show kIsWeb; // <-- NEW IMPORT
 
 // --- CLOUDINARY INSTANCE ---
 const String _CLOUD_NAME = 'dc51dx2da'; 
@@ -97,7 +98,7 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
     return 'Instructor';
   }
   
-  // --- File Picker Logic (MODIFIED) ---
+  // --- File Picker Logic (Unchanged) ---
   Future<void> _pickFile() async {
     if (_isUploading) return; // Prevent double click
 
@@ -117,15 +118,10 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
     }
   }
 
-  // --- NEW: Upload on Selection Function ---
+  // --- NEW: Upload on Selection Function (FIXED) ---
   Future<void> _uploadOnSelection(PlatformFile file) async {
-    if (file.bytes == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error: File bytes are null.')),
-      );
-      if (mounted) setState(() => _pickedFile = null);
-      return;
-    }
+    // FIX: Removed the 'file.bytes == null' check. 
+    // This check fails on mobile where 'bytes' is null but 'path' is not.
 
     setState(() {
       _isUploading = true; 
@@ -151,22 +147,41 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
     }
   }
 
-  // --- Cloudinary Upload Logic (Extracting from the original function) ---
+  // --- Cloudinary Upload Logic (FIXED for Mobile + Web) ---
   Future<String?> _uploadFileToCloudinary(PlatformFile file) async {
     try {
       final CloudinaryResourceType resourceType = file.extension == 'pdf' 
           ? CloudinaryResourceType.Auto
           : CloudinaryResourceType.Raw;
 
-      final bytes = file.bytes!;      
-
-      final response = await cloudinary.uploadFile(
-        CloudinaryFile.fromBytesData(
-          bytes,
+      // FIX: Create the correct CloudinaryFile type based on platform
+      CloudinaryFile fileToUpload;
+      if (kIsWeb) {
+        // WEB: Use bytes
+        if (file.bytes == null) {
+          throw Exception("File bytes are null on web.");
+        }
+        fileToUpload = CloudinaryFile.fromBytesData(
+          file.bytes!,
           resourceType: resourceType,
           folder: 'collab-learn/assignments/${widget.classId}',
           identifier: file.name,
-        ),
+        );
+      } else {
+        // MOBILE: Use path
+        if (file.path == null) {
+          throw Exception("File path is null on mobile.");
+        }
+        fileToUpload = CloudinaryFile.fromFile(
+          file.path!,
+          resourceType: resourceType,
+          folder: 'collab-learn/assignments/${widget.classId}',
+          identifier: file.name,
+        );
+      }
+      
+      final response = await cloudinary.uploadFile(
+        fileToUpload,
         onProgress: (count, total) {
           if (mounted) {
             setState(() {
@@ -176,6 +191,7 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
         },
       );
       return response.secureUrl;
+
     } on CloudinaryException catch (e) {
       debugPrint('Cloudinary upload error: ${e.message}');
       if (mounted) {
@@ -223,7 +239,7 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
     }
   }
 
-  // --- Main Post/Edit Logic (MODIFIED for Metadata Only) ---
+  // --- Main Post/Edit Logic (Unchanged) ---
   Future<void> _postAssignment() async {
     if (!_formKey.currentState!.validate()) return;
     if (_selectedDueDate == null || _selectedDueTime == null) {
@@ -234,7 +250,6 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
     }
     if (_isUploading || _isLoading) return; 
     
-    // Check if the user intends to attach a file but hasn't uploaded successfully
     if (_pickedFile != null && _uploadedFileUrl == null) {
        ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('File is still uploading or upload failed. Please wait or try again.')),
@@ -246,7 +261,6 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
       _isLoading = true;
     });
     
-    // Use the final uploaded URL/Name state
     String? fileUrl = _uploadedFileUrl;
     String fileName = _uploadedFileName ?? '';
 
@@ -272,7 +286,6 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
       };
 
       if (_isEditing && widget.assignmentId != null) {
-        // EDIT LOGIC
         await collection.doc(widget.assignmentId).update({
           ...data, 
           'lastUpdatedOn': FieldValue.serverTimestamp(),
@@ -283,7 +296,6 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
           );
         }
       } else {
-        // CREATE LOGIC
         await collection.add({
           ...data,
           'postedOn': FieldValue.serverTimestamp(),
@@ -322,6 +334,7 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
 
   @override
   Widget build(BuildContext context) {
+    // ... (All build logic is unchanged) ...
     final primaryColor = Theme.of(context).colorScheme.primary;
     return Scaffold(
       appBar: AppBar(

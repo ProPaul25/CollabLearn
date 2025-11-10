@@ -7,6 +7,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter/foundation.dart' show kIsWeb; // <-- NEW IMPORT
 
 // Import necessary files
 import 'study_materials_view_page.dart'; // Contains Assignment and AssignmentItem models
@@ -82,7 +83,8 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
     if (_currentUser == null) return;
 
     final submissionQuery = await FirebaseFirestore.instance
-        .collection('submissions')
+        // FIX 2: Changed 'submissions' to 'assignment_submissions'
+        .collection('assignment_submissions')
         .where('assignmentId', isEqualTo: widget.assignment.id)
         .where('studentId', isEqualTo: _currentUser.uid)
         .limit(1)
@@ -117,23 +119,43 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
     }
   }
 
+  // --- Cloudinary Upload Logic (FIXED for Mobile + Web) ---
   Future<String?> _uploadFileToCloudinary(PlatformFile file) async {
-    if (file.bytes == null) {
-      _showSnackBar('Error: File bytes are null.');
-      return null;
-    }
-
     try {
-      // FIXED: Removed unused resourceType variable and use CloudinaryResourceType.Raw directly
-      final bytes = _pickedFile!.bytes!;
-      final response = await cloudinary.uploadFile(
-        // FIXED: Use fromBytesData instead of fromBytes
-        CloudinaryFile.fromBytesData(
-          bytes,
-          resourceType: CloudinaryResourceType.Raw,
+      final CloudinaryResourceType resourceType = file.extension == 'pdf' 
+          ? CloudinaryResourceType.Auto
+          : CloudinaryResourceType.Raw;
+
+      // FIX 1: Create the correct CloudinaryFile type based on platform
+      CloudinaryFile fileToUpload;
+      if (kIsWeb) {
+        // WEB: Use bytes
+        if (file.bytes == null) {
+          _showSnackBar('Error: File bytes are null on web.');
+          return null;
+        }
+        fileToUpload = CloudinaryFile.fromBytesData(
+          file.bytes!,
+          resourceType: resourceType,
           folder: 'collab-learn/submissions/${widget.assignment.courseId}',
-          identifier: _pickedFile!.name,
-        ),
+          identifier: file.name,
+        );
+      } else {
+        // MOBILE: Use path
+        if (file.path == null) {
+          _showSnackBar('Error: File path is null on mobile.');
+          return null;
+        }
+        fileToUpload = CloudinaryFile.fromFile(
+          file.path!,
+          resourceType: resourceType,
+          folder: 'collab-learn/submissions/${widget.assignment.courseId}',
+          identifier: file.name,
+        );
+      }
+
+      final response = await cloudinary.uploadFile(
+        fileToUpload,
         onProgress: (count, total) {
           if (mounted) {
             setState(() {
@@ -143,6 +165,7 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
         },
       );
       return response.secureUrl;
+
     } on CloudinaryException catch (e) {
       debugPrint('Cloudinary upload error: ${e.message}');
       _showSnackBar('File upload failed: ${e.message}');
@@ -153,6 +176,7 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
       return null;
     }
   }
+
 
   Future<void> _submitAssignment() async {
     if (_pickedFile == null) {
@@ -190,19 +214,25 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
         'isGraded': false,
         'grade': null,
         'feedback': null,
+        // FIX 2: Added missing fields that student_submission_detail needs
+        'courseId': widget.assignment.courseId, 
+        'graded': false,
+        'score': null,
       };
 
       if (_existingSubmission != null) {
         // RESUBMIT/UPDATE
         await FirebaseFirestore.instance
-            .collection('submissions')
+            // FIX 2: Changed 'submissions' to 'assignment_submissions'
+            .collection('assignment_submissions')
             .doc(_existingSubmission!['submissionDocId'])
             .update(submissionData);
         _showSnackBar('Assignment successfully re-submitted!');
       } else {
         // NEW SUBMISSION
         await FirebaseFirestore.instance
-            .collection('submissions')
+            // FIX 2: Changed 'submissions' to 'assignment_submissions'
+            .collection('assignment_submissions')
             .add(submissionData);
         _showSnackBar('Assignment successfully submitted!');
       }
@@ -262,8 +292,7 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
     );
   }
 
-  // --- Student View ---
-
+  // --- Student View (Unchanged) ---
   Widget _buildStudentSubmissionView() {
     final primaryColor = Theme.of(context).colorScheme.primary;
     final dueDateTime = widget.assignment.dueDate.toDate();
@@ -277,7 +306,8 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
     if (_existingSubmission != null) {
       final isGraded = _existingSubmission!['isGraded'] == true;
       if (isGraded) {
-        statusText = 'GRADED: ${_existingSubmission!['grade']} / ${widget.assignment.points}';
+        // FIX: Use 'score' field to match instructor's page
+        statusText = 'GRADED: ${_existingSubmission!['score'] ?? 'N/A'} / ${widget.assignment.points}';
         statusColor = Colors.green.shade800;
         statusIcon = Icons.done_all;
       } else {
@@ -298,8 +328,7 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
         children: [
           // Submission Status Card
           Card(
-            // FIXED: Use withValues instead of withOpacity to avoid deprecation
-            color: statusColor.withValues(alpha: 0.1), 
+            color: Color.fromRGBO(statusColor.red, statusColor.green, statusColor.blue, 0.1), 
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: statusColor)),
             child: Padding(
               padding: const EdgeInsets.all(12.0),
@@ -310,7 +339,7 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
                   Text(statusText, style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 16)),
                   const Spacer(),
                   if (_existingSubmission != null && _existingSubmission!['isGraded'] == true)
-                    Text('Points: ${_existingSubmission!['grade']} / ${widget.assignment.points}', style: TextStyle(color: statusColor, fontWeight: FontWeight.bold)),
+                    Text('Points: ${_existingSubmission!['score'] ?? 'N/A'} / ${widget.assignment.points}', style: TextStyle(color: statusColor, fontWeight: FontWeight.bold)),
                 ],
               ),
             ),
@@ -330,8 +359,8 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
               children: [
                 const Text('Current Submission:'),
                 _buildFileLink(
-                  _existingSubmission!['fileUrl'],
-                  _existingSubmission!['fileName'],
+                  _existingSubmission!['fileUrl'], // FIX: Use 'fileUrl'
+                  _existingSubmission!['fileName'], // FIX: Use 'fileName'
                   Colors.blue.shade700,
                 ),
                 const SizedBox(height: 15),
@@ -421,8 +450,7 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
     );
   }
 
-  // --- Instructor View ---
-
+  // --- Instructor View (Unchanged) ---
   Widget _buildInstructorReviewView(String classId) {
     final assignmentItem = AssignmentItem(
       id: widget.assignment.id,
@@ -443,8 +471,7 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
     );
   }
 
-  // --- Main Build Method ---
-
+  // --- Main Build Method (Unchanged) ---
   @override
   Widget build(BuildContext context) {
     final primaryColor = Theme.of(context).colorScheme.primary;
@@ -452,7 +479,6 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
     final isOverdue = DateTime.now().isAfter(dueDateTime);
     final deadlineText = DateFormat('MMM d, yyyy @ h:mm a').format(dueDateTime);
     
-    // The Assignment details section, common to both views
     final assignmentDetails = SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
       child: Column(

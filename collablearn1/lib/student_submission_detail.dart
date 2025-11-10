@@ -1,4 +1,4 @@
-// lib/student_submission_detail.dart - (No errors found)
+// lib/student_submission_detail.dart - FIXED
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -26,7 +26,7 @@ class StudentSubmissionDetail extends StatefulWidget {
 class _StudentSubmissionDetailState extends State<StudentSubmissionDetail> {
   // ... (All state logic is unchanged) ...
   final _gradeController = TextEditingController();
-  final _feedbackController = TextEditingController(); 
+  final _feedbackController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _isSaving = false;
 
@@ -46,7 +46,10 @@ class _StudentSubmissionDetailState extends State<StudentSubmissionDetail> {
   }
 
   Future<void> _fetchInitialGrade() async {
-    final submissionDoc = await FirebaseFirestore.instance.collection('assignment_submissions').doc(widget.submissionDocId).get();
+    final submissionDoc = await FirebaseFirestore.instance
+        .collection('assignment_submissions')
+        .doc(widget.submissionDocId)
+        .get();
     final data = submissionDoc.data();
     if (data != null) {
       if (data.containsKey('score') && data['score'] != null) {
@@ -59,11 +62,11 @@ class _StudentSubmissionDetailState extends State<StudentSubmissionDetail> {
   }
 
   Future<void> _launchUrl(String url) async {
-      final uri = Uri.parse(url);
-      if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-        throw Exception('Could not launch $uri');
-      }
+    final uri = Uri.parse(url);
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      throw Exception('Could not launch $uri');
     }
+  }
 
   Future<void> _saveGrade() async {
     // ... (All save logic is unchanged) ...
@@ -75,23 +78,32 @@ class _StudentSubmissionDetailState extends State<StudentSubmissionDetail> {
       final score = int.tryParse(_gradeController.text.trim());
       final feedback = _feedbackController.text.trim();
 
-      await FirebaseFirestore.instance.collection('assignment_submissions').doc(widget.submissionDocId).update({
+      await FirebaseFirestore.instance
+          .collection('assignment_submissions')
+          .doc(widget.submissionDocId)
+          .update({
         'score': score,
-        'graded': true,
-        'feedback': feedback, 
+        'graded': true, // This field is used by student_submission_detail
+        'isGraded':
+            true, // This field is used by assignment_detail_page (student view)
+        'feedback': feedback,
         'gradedOn': Timestamp.now(),
       });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Grade and review saved successfully!'), backgroundColor: Colors.green),
+          const SnackBar(
+              content: Text('Grade and review saved successfully!'),
+              backgroundColor: Colors.green),
         );
-        Navigator.pop(context); 
+        Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save grade: $e'), backgroundColor: Colors.red),
+          SnackBar(
+              content: Text('Failed to save grade: $e'),
+              backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -105,26 +117,35 @@ class _StudentSubmissionDetailState extends State<StudentSubmissionDetail> {
     final primaryColor = Theme.of(context).colorScheme.primary;
 
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance.collection('assignment_submissions').doc(widget.submissionDocId).snapshots(),
+      stream: FirebaseFirestore.instance
+          .collection('assignment_submissions')
+          .doc(widget.submissionDocId)
+          .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData || snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
-        }
-        
-        final submissionData = snapshot.data!.data();
-        if (submissionData == null) {
-          return const Scaffold(body: Center(child: Text('Submission not found.')));
+        if (!snapshot.hasData ||
+            snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+              body: Center(child: CircularProgressIndicator()));
         }
 
-        final fileUrl = submissionData['submittedFileUrl'] as String? ?? '';
-        final fileName = submissionData['submittedFileName'] as String? ?? 'Submission File';
+        final submissionData = snapshot.data!.data();
+        if (submissionData == null) {
+          return const Scaffold(
+              body: Center(child: Text('Submission not found.')));
+        }
+
+        // FIX 1: Read 'fileUrl' not 'submittedFileUrl'
+        final fileUrl = submissionData['fileUrl'] as String? ?? '';
+        // FIX 2: Read 'fileName' not 'submittedFileName'
+        final fileName = submissionData['fileName'] as String? ?? 'Submission File';
         final isGraded = submissionData['graded'] ?? false;
         final score = submissionData['score'];
 
         if (_gradeController.text.isEmpty && score != null) {
           _gradeController.text = score.toString();
         }
-        if (_feedbackController.text.isEmpty && submissionData['feedback'] != null) {
+        if (_feedbackController.text.isEmpty &&
+            submissionData['feedback'] != null) {
           _feedbackController.text = submissionData['feedback'].toString();
         }
 
@@ -141,7 +162,8 @@ class _StudentSubmissionDetailState extends State<StudentSubmissionDetail> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Assignment: ${widget.assignment.title}', style: Theme.of(context).textTheme.headlineSmall),
+                  Text('Assignment: ${widget.assignment.title}',
+                      style: Theme.of(context).textTheme.headlineSmall),
                   const Divider(),
 
                   Card(
@@ -149,15 +171,21 @@ class _StudentSubmissionDetailState extends State<StudentSubmissionDetail> {
                     color: Colors.lightGreen.shade50,
                     child: ListTile(
                       leading: const Icon(Icons.file_download, color: Colors.green),
-                      title: Text(fileName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Text('Submitted on: ${(submissionData['submissionTime'] as Timestamp).toDate().toString().split('.')[0]}'),
+                      title: Text(fileName,
+                          style: const TextStyle(fontWeight: FontWeight.bold)),
+                      // FIX 3: Read 'submittedOn' not 'submissionTime'
+                      subtitle: Text(
+                          'Submitted on: ${(submissionData['submittedOn'] as Timestamp).toDate().toString().split('.')[0]}'),
                       trailing: const Icon(Icons.open_in_new),
                       onTap: fileUrl.isNotEmpty ? () => _launchUrl(fileUrl) : null,
                     ),
                   ),
                   const SizedBox(height: 20),
 
-                  Text('Grade Details (Max Points: ${widget.assignment.points})', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  Text(
+                      'Grade Details (Max Points: ${widget.assignment.points})',
+                      style: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 10),
 
                   Row(
@@ -171,12 +199,15 @@ class _StudentSubmissionDetailState extends State<StudentSubmissionDetail> {
                             labelText: 'Score',
                             hintText: 'Enter score',
                             suffixText: '/ ${widget.assignment.points}',
-                            border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
+                            border: const OutlineInputBorder(
+                                borderRadius:
+                                    BorderRadius.all(Radius.circular(10))),
                           ),
                           validator: (value) {
                             final inputScore = int.tryParse(value ?? '');
                             if (inputScore == null) return 'Enter a number';
-                            if (inputScore < 0 || inputScore > widget.assignment.points) {
+                            if (inputScore < 0 ||
+                                inputScore > widget.assignment.points) {
                               return 'Score must be between 0 and ${widget.assignment.points}';
                             }
                             return null;
@@ -189,40 +220,53 @@ class _StudentSubmissionDetailState extends State<StudentSubmissionDetail> {
                         child: ElevatedButton.icon(
                           onPressed: _isSaving ? null : _saveGrade,
                           icon: _isSaving
-                              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                      color: Colors.white, strokeWidth: 2))
                               : const Icon(Icons.save),
-                          label: Text(isGraded ? 'Update Grade' : 'Save Grade'),
+                          label:
+                              Text(isGraded ? 'Update Grade' : 'Save Grade'),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: isGraded ? Colors.orange : primaryColor,
+                            backgroundColor:
+                                isGraded ? Colors.orange : primaryColor,
                             foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10)),
                           ),
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 20),
-                  
+
                   TextFormField(
                     controller: _feedbackController,
                     maxLines: 4,
                     decoration: const InputDecoration(
                       labelText: 'Review/Feedback (Optional)',
                       hintText: 'Provide constructive feedback here...',
-                      border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.all(Radius.circular(10))),
                       alignLabelWithHint: true,
                     ),
                   ),
                   const SizedBox(height: 40),
 
                   Card(
-                    color: isGraded 
+                    color: isGraded
                         ? const Color(0x1A4CAF50) // Semi-transparent Green
                         : const Color(0x1AF44336), // Semi-transparent Red
                     child: ListTile(
-                      leading: Icon(isGraded ? Icons.grade : Icons.pending, color: isGraded ? Colors.green : Colors.red),
-                      title: Text(isGraded ? 'Current Grade: $score / ${widget.assignment.points}' : 'Awaiting Grading'),
-                      subtitle: Text(isGraded ? 'Graded on: ${(submissionData['gradedOn'] as Timestamp?)?.toDate().toString().split('.')[0] ?? 'N/A'}' : 'Submission received.'),
+                      leading: Icon(isGraded ? Icons.grade : Icons.pending,
+                          color: isGraded ? Colors.green : Colors.red),
+                      title: Text(isGraded
+                          ? 'Current Grade: $score / ${widget.assignment.points}'
+                          : 'Awaiting Grading'),
+                      subtitle: Text(isGraded
+                          ? 'Graded on: ${(submissionData['gradedOn'] as Timestamp?)?.toDate().toString().split('.')[0] ?? 'N/A'}'
+                          : 'Submission received.'),
                     ),
                   ),
                 ],
