@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'study_group_chat_page.dart';
-// NEW IMPORT
+// NEW IMPORT (No new import needed for this fix, Filter is part of cloud_firestore)
 
 class StudyGroupsViewPage extends StatefulWidget {
   final String classId;
@@ -28,18 +28,21 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
   void initState() {
     super.initState();
     _loadCurrentUserName();
-    _loadClassRoster(); 
+    _loadClassRoster();
   }
 
   Future<void> _loadCurrentUserName() async {
-    final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+    final userDoc =
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
     if (userDoc.exists) {
       final data = userDoc.data();
       final String firstName = data?['firstName'] ?? '';
       final String lastName = data?['lastName'] ?? '';
       if (mounted) {
         setState(() {
-          _currentUserName = "$firstName $lastName".trim().isEmpty ? (user.email ?? 'User') : "$firstName $lastName".trim();
+          _currentUserName = "$firstName $lastName".trim().isEmpty
+              ? (user.email ?? 'User')
+              : "$firstName $lastName".trim();
         });
       }
     }
@@ -47,10 +50,14 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
 
   Future<void> _loadClassRoster() async {
     try {
-      final classDoc = await FirebaseFirestore.instance.collection('classes').doc(widget.classId).get();
-      final studentIds = List<String>.from(classDoc.data()?['studentIds'] ?? []);
+      final classDoc = await FirebaseFirestore.instance
+          .collection('classes')
+          .doc(widget.classId)
+          .get();
+      final studentIds =
+          List<String>.from(classDoc.data()?['studentIds'] ?? []);
       final instructorId = classDoc.data()?['instructorId'] as String?;
-      
+
       final allUids = {...studentIds};
       if (instructorId != null) {
         allUids.add(instructorId);
@@ -71,9 +78,9 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
           'uid': doc.id,
           'name': name.isEmpty ? (data['email'] ?? 'User') : name,
           // FIX: Ensure 'isInstructor' is explicitly set to a boolean
-          'isInstructor': doc.id == instructorId, 
+          'isInstructor': doc.id == instructorId,
         };
-      }).where((u) => u['uid'] != user.uid).toList(); 
+      }).where((u) => u['uid'] != user.uid).toList();
 
       if (mounted) {
         setState(() {
@@ -84,13 +91,13 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
       debugPrint('Error loading class roster: $e');
     }
   }
-  
+
   Future<void> _showCreateGroupDialog() async {
     final _nameController = TextEditingController();
     final _descriptionController = TextEditingController();
     final _formKey = GlobalKey<FormState>();
-    
-    List<String> _selectedUids = []; 
+
+    List<String> _selectedUids = [];
 
     return showDialog(
       context: context,
@@ -106,16 +113,19 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
                   TextFormField(
                     controller: _nameController,
                     decoration: const InputDecoration(labelText: 'Group Name'),
-                    validator: (value) => value!.isEmpty ? 'Name is required' : null,
+                    validator: (value) =>
+                        value!.isEmpty ? 'Name is required' : null,
                   ),
                   const SizedBox(height: 10),
                   TextFormField(
                     controller: _descriptionController,
-                    decoration: const InputDecoration(labelText: 'Purpose/Description'),
+                    decoration:
+                        const InputDecoration(labelText: 'Purpose/Description'),
                     maxLines: 3,
                   ),
                   const SizedBox(height: 20),
-                  const Text('Invite Class Members (Optional)', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const Text('Invite Class Members (Optional)',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 10),
                   if (_classRoster.isEmpty)
                     const Text('No other members in the class to invite.')
@@ -123,11 +133,14 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
                     ..._classRoster.map((member) {
                       return StatefulBuilder(
                         builder: (context, setDialogState) {
-                          final isSelected = _selectedUids.contains(member['uid']);
+                          final isSelected =
+                              _selectedUids.contains(member['uid']);
                           return CheckboxListTile(
                             title: Text(member['name']),
                             // The isInstructor field is now guaranteed to be a boolean
-                            subtitle: Text(member['isInstructor'] == true ? 'Instructor' : 'Student'),
+                            subtitle: Text(member['isInstructor'] == true
+                                ? 'Instructor'
+                                : 'Student'),
                             value: isSelected,
                             onChanged: (bool? value) {
                               setDialogState(() {
@@ -155,9 +168,9 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
               onPressed: () {
                 if (_formKey.currentState!.validate()) {
                   _createGroup(
-                    _nameController.text.trim(), 
+                    _nameController.text.trim(),
                     _descriptionController.text.trim(),
-                    _selectedUids, 
+                    _selectedUids,
                   );
                   Navigator.pop(context);
                 }
@@ -170,13 +183,14 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
     );
   }
 
-  Future<void> _createGroup(String name, String description, List<String> inviteeUids) async {
+  Future<void> _createGroup(
+      String name, String description, List<String> inviteeUids) async {
     try {
       // 1. Members list must ONLY contain the creator initially (as required by security rules)
-      final initialMemberUids = [user.uid]; 
-      
+      final initialMemberUids = [user.uid];
+
       // 2. Invitees list contains everyone: the creator and all others invited
-      final allInviteeUids = {...inviteeUids, user.uid}.toList(); 
+      final allInviteeUids = {...inviteeUids, user.uid}.toList();
 
       await FirebaseFirestore.instance.collection('study_groups').add({
         'groupName': name,
@@ -185,27 +199,34 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
         'createdBy': user.uid, // Store creator's UID
         'creatorName': _currentUserName,
         'memberUids': initialMemberUids, // FIX: Only the creator is an initial member
-        'inviteeUids': allInviteeUids,   
+        'inviteeUids': allInviteeUids,
         'createdAt': FieldValue.serverTimestamp(),
       });
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to create group: $e'), backgroundColor: Colors.red),
+          SnackBar(
+              content: Text('Failed to create group: $e'),
+              backgroundColor: Colors.red),
         );
       }
     }
   }
 
- // --- Group List Stream (FIXED) ---
+  // --- Group List Stream (FIXED) ---
   Stream<QuerySnapshot> _getStudyGroupsStream() {
     return FirebaseFirestore.instance
         .collection('study_groups')
         .where('classId', isEqualTo: widget.classId)
-        // FIX: Changed 'inviteeUids' to 'memberUids' to ensure groups 
-        // that the user has joined (or was added to) are visible.
-        .where('memberUids', arrayContains: user.uid) 
-        .orderBy('createdAt', descending: true) 
+        // FIX: Use Filter.or to find groups where the user is
+        // either a member OR an invitee.
+        .where(Filter.or(
+          Filter('memberUids', arrayContains: user.uid),
+          Filter('inviteeUids', arrayContains: user.uid),
+        ))
+        // NOTE: We remove .orderBy('createdAt') here because it
+        // conflicts with Filter.or. We will sort the list manually
+        // in the StreamBuilder below.
         .snapshots();
   }
 
@@ -218,19 +239,27 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
     }
 
     try {
-      await FirebaseFirestore.instance.collection('study_groups').doc(groupId).update({
+      await FirebaseFirestore.instance
+          .collection('study_groups')
+          .doc(groupId)
+          .update({
         'memberUids': FieldValue.arrayUnion([user.uid]),
-        'inviteeUids': FieldValue.arrayRemove([user.uid]), // Automatically reject/remove self from invitees
+        'inviteeUids': FieldValue.arrayRemove(
+            [user.uid]), // Automatically reject/remove self from invitees
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Joined group successfully!'), backgroundColor: Colors.green),
+          const SnackBar(
+              content: Text('Joined group successfully!'),
+              backgroundColor: Colors.green),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to join group: $e'), backgroundColor: Colors.red),
+          SnackBar(
+              content: Text('Failed to join group: $e'),
+              backgroundColor: Colors.red),
         );
       }
     }
@@ -238,24 +267,30 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
 
   Future<void> _rejectGroup(String groupId) async {
     try {
-      await FirebaseFirestore.instance.collection('study_groups').doc(groupId).update({
-        'inviteeUids': FieldValue.arrayRemove([user.uid]), 
+      await FirebaseFirestore.instance
+          .collection('study_groups')
+          .doc(groupId)
+          .update({
+        'inviteeUids': FieldValue.arrayRemove([user.uid]),
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Group invitation rejected.'), backgroundColor: Colors.orange),
+          const SnackBar(
+              content: Text('Group invitation rejected.'),
+              backgroundColor: Colors.orange),
         );
       }
     } catch (e) {
       if (mounted) {
         // This is where the permission error was showing
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to reject invitation: $e'), backgroundColor: Colors.red),
+          SnackBar(
+              content: Text('Failed to reject invitation: $e'),
+              backgroundColor: Colors.red),
         );
       }
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -273,8 +308,22 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
           }
 
           final groups = snapshot.data?.docs ?? [];
-          final visibleGroups = groups;
 
+          // VVVV ADD THIS SORTING LOGIC VVVV
+          // FIX: Sort the documents manually (descending)
+          final visibleGroups = groups
+            ..sort((a, b) {
+              final aData = a.data() as Map<String, dynamic>;
+              final bData = b.data() as Map<String, dynamic>;
+              final aTimestamp = aData['createdAt'] as Timestamp?;
+              final bTimestamp = bData['createdAt'] as Timestamp?;
+
+              if (bTimestamp == null) return -1;
+              if (aTimestamp == null) return 1;
+              return bTimestamp
+                  .compareTo(aTimestamp); // Sorts descending (newest first)
+            });
+          // ^^^^ END OF NEW LOGIC ^^^^
 
           if (visibleGroups.isEmpty) {
             return const Center(
@@ -296,28 +345,32 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
               final groupName = data['groupName'] ?? 'Unnamed Group';
               final memberUids = data['memberUids'] as List<dynamic>? ?? [];
               final creatorId = data['createdBy'] as String? ?? ''; // Get Creator ID
-              
-              final isMember = memberUids.contains(user.uid);
-              
-              final inviteeUids = data['inviteeUids'] as List<dynamic>? ?? [];
-              final isInvitedButNotMember = inviteeUids.contains(user.uid) && !isMember;
 
+              final isMember = memberUids.contains(user.uid);
+
+              final inviteeUids = data['inviteeUids'] as List<dynamic>? ?? [];
+              final isInvitedButNotMember =
+                  inviteeUids.contains(user.uid) && !isMember;
 
               Widget trailingWidget;
               VoidCallback? onTapAction;
 
               if (isMember) {
-                trailingWidget = creatorId == user.uid ? const Icon(Icons.settings, color: Colors.green) : const Icon(Icons.chat_bubble_outline, color: Colors.green);
+                trailingWidget = creatorId == user.uid
+                    ? const Icon(Icons.settings, color: Colors.green)
+                    : const Icon(Icons.chat_bubble_outline, color: Colors.green);
                 onTapAction = () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (context) => StudyGroupChatPage(
-                        groupId: groupId,
-                        groupName: groupName,
-                        currentUserName: _currentUserName,
-                      ),
-                    ),
-                  ).then((_) => setState(() {})); // Reloads group view when returning
+                  Navigator.of(context)
+                      .push(
+                        MaterialPageRoute(
+                          builder: (context) => StudyGroupChatPage(
+                            groupId: groupId,
+                            groupName: groupName,
+                            currentUserName: _currentUserName,
+                          ),
+                        ),
+                      )
+                      .then((_) => setState(() {})); // Reloads group view when returning
                 };
               } else if (isInvitedButNotMember) {
                 trailingWidget = Row(
@@ -335,27 +388,32 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
                     const SizedBox(width: 8),
                     TextButton(
                       onPressed: () => _rejectGroup(groupId),
-                      child: const Text('Reject', style: TextStyle(color: Colors.red)),
+                      child: const Text('Reject',
+                          style: TextStyle(color: Colors.red)),
                     ),
                   ],
                 );
-                onTapAction = null; 
+                onTapAction = null;
               } else {
-                 trailingWidget = const Text('Invite Only', style: TextStyle(color: Colors.grey));
-                 onTapAction = null;
+                trailingWidget =
+                    const Text('Invite Only', style: TextStyle(color: Colors.grey));
+                onTapAction = null;
               }
-
 
               return Card(
                 margin: const EdgeInsets.only(bottom: 15),
                 elevation: 3,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15)),
                 child: ListTile(
                   leading: CircleAvatar(
-                    backgroundColor: isMember ? Colors.green : primaryColor.withOpacity(0.1),
-                    child: Icon(Icons.group, color: isMember ? Colors.white : primaryColor),
+                    backgroundColor:
+                        isMember ? Colors.green : primaryColor.withOpacity(0.1),
+                    child: Icon(Icons.group,
+                        color: isMember ? Colors.white : primaryColor),
                   ),
-                  title: Text(groupName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  title: Text(groupName,
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
                   subtitle: Text(
                     'Members: ${memberUids.length} • Created by: ${data['creatorName'] ?? 'N/A'}',
                     maxLines: 2,
