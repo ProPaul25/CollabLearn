@@ -1,17 +1,18 @@
-// lib/user_progress_tracker_page.dart - MODIFIED FOR PER-CLASS ATTENDANCE & PULL-TO-REFRESH
+// lib/user_progress_tracker_page.dart
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-// --- NEW Data Model for Per-Class Attendance ---
+// --- Data Models ---
+
 class ClassAttendanceSummary {
   final String classId;
   final String className;
   final int totalSessions;
   final int attendedSessions;
-  final int? percentage; // Changed to nullable int
-  final String displayPercentage; // New field for UI display
+  final int? percentage;
+  final String displayPercentage;
 
   ClassAttendanceSummary({
     required this.classId,
@@ -19,10 +20,24 @@ class ClassAttendanceSummary {
     required this.totalSessions,
     required this.attendedSessions,
     required this.percentage,
-    required this.displayPercentage, // Required new field
+    required this.displayPercentage,
   });
 }
-// ---------------------------------------------
+
+class GradedItem {
+  final String title;
+  final String type; // 'Assignment' or 'Quiz'
+  final int score;
+  final int maxScore;
+  final double percentage;
+
+  GradedItem({
+    required this.title,
+    required this.type,
+    required this.score,
+    required this.maxScore,
+  }) : percentage = maxScore > 0 ? (score / maxScore) : 0.0;
+}
 
 class UserProgressTrackerPage extends StatefulWidget {
   const UserProgressTrackerPage({super.key});
@@ -33,66 +48,108 @@ class UserProgressTrackerPage extends StatefulWidget {
 
 class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
   bool _isLoading = true;
-  String _userName = 'User';
-
-  // State variables for dynamic metrics
-  int _overallAttendancePercentage = 0; // Renamed for clarity
-  String _overallAttendanceDisplay = 'N/A'; // New state for overall display
-  int _quizAverage = 0;
-  int _goalProgress = 0;
-  final int _goalTarget = 85; // Original Target for General Goal
-  final int _attendanceTarget = 70; // New target for overall attendance
+  String _userName = 'Student';
   
-  // --- NEW STATE VARIABLE for Per-Class Attendance ---
-  List<ClassAttendanceSummary> _classAttendance = [];
-  // ----------------------------------------------------
+  // --- Metrics State ---
+  int _overallAttendancePercentage = 0;
+  String _overallAttendanceDisplay = 'N/A';
+  
+  int _quizAverage = 0;
+  bool _hasQuizData = false;
 
-  // Dynamic list for Performance Overview/Mid Exams
-  List<Map<String, dynamic>> _midExamPerformance = [];
+  int _assignmentCompletionRate = 0; // Replaces "Goal Progress"
+  
+  List<ClassAttendanceSummary> _classAttendance = [];
+  List<GradedItem> _recentGrades = []; // Replaces static "Mid Exams"
+
+  // Thresholds
+  final int _attendanceTarget = 70;
 
   @override
   void initState() {
     super.initState();
-    // No explicit call here; will be called in build via FutureBuilder, 
-    // or manually by _fetchPerformanceData to load all data.
-    _fetchPerformanceData(); 
+    _fetchDynamicData();
   }
-  
-  // --- FUNCTION: Fetch & Calculate Per-Class Attendance ---
-  Future<List<ClassAttendanceSummary>> _fetchClassAttendance(String userId, List<dynamic> classIds) async {
+
+  Future<void> _fetchDynamicData() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
+
+    if (mounted) setState(() => _isLoading = true);
+
+    try {
+      // 1. Fetch User Profile & Enrolled Classes
+      final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      final userData = userDoc.data();
+      
+      final firstName = userData?['firstName'] ?? '';
+      final lastName = userData?['lastName'] ?? '';
+      List<String> enrolledClassIds = [];
+      
+      if (userData != null && userData['enrolledClasses'] is List) {
+        enrolledClassIds = List<String>.from(userData['enrolledClasses']);
+      }
+
+      if (mounted) {
+        setState(() {
+          _userName = (firstName.isNotEmpty || lastName.isNotEmpty) 
+              ? '$firstName $lastName' 
+              : user.email ?? 'Student';
+        });
+      }
+
+      // 2. Calculate Attendance (Per Class & Overall)
+      await _calculateAttendance(user.uid, enrolledClassIds);
+
+      // 3. Calculate Academic Performance (Quizzes & Assignments)
+      await _calculateAcademicPerformance(user.uid, enrolledClassIds);
+
+    } catch (e) {
+      debugPrint('Error fetching dashboard data: $e');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _calculateAttendance(String userId, List<String> classIds) async {
     List<ClassAttendanceSummary> summaries = [];
-    final firestore = FirebaseFirestore.instance;
+    List<int> validPercentages = [];
 
     for (var classId in classIds) {
-      if (classId is! String || classId.isEmpty) continue;
+      if (classId.isEmpty) continue;
 
-      // 1. Get Class Name
-      final classDoc = await firestore.collection('classes').doc(classId).get();
+      // Fetch Class Name
+      final classDoc = await FirebaseFirestore.instance.collection('classes').doc(classId).get();
       final className = classDoc.data()?['className'] ?? 'Unknown Class';
-      
-      // 2. Count Total Sessions for this class (that have ended)
-      final totalSessionsSnapshot = await firestore
+
+      // Count Sessions
+      final totalSessionsSnapshot = await FirebaseFirestore.instance
           .collection('attendance_sessions')
           .where('courseId', isEqualTo: classId)
           .count()
           .get();
       final totalSessions = totalSessionsSnapshot.count ?? 0;
-      
-      // 3. Count Attended Sessions by the user
-      final attendedRecordsSnapshot = await firestore
+
+      // Count Attended
+      final attendedSnapshot = await FirebaseFirestore.instance
           .collection('attendance_records')
           .where('courseId', isEqualTo: classId)
           .where('studentId', isEqualTo: userId)
           .count()
           .get();
-      final attendedSessions = attendedRecordsSnapshot.count ?? 0;
-      
-      // 4. Calculate Percentage (Return null if no sessions were held)
-      final int? percentage = totalSessions > 0 
-          ? ((attendedSessions / totalSessions) * 100).round()
-          : null;
-      
-      final String displayPercentage = percentage == null ? 'N/A' : '$percentage%';
+      final attendedSessions = attendedSnapshot.count ?? 0;
+
+      int? percentage;
+      String display = 'N/A';
+
+      if (totalSessions > 0) {
+        percentage = ((attendedSessions / totalSessions) * 100).round();
+        display = '$percentage%';
+        validPercentages.add(percentage);
+      }
 
       summaries.add(ClassAttendanceSummary(
         classId: classId,
@@ -100,127 +157,133 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
         totalSessions: totalSessions,
         attendedSessions: attendedSessions,
         percentage: percentage,
-        displayPercentage: displayPercentage, // Store the display value
+        displayPercentage: display,
       ));
     }
-    
-    // Calculate the overall average based ONLY on classes that have sessions
-    final validPercentages = summaries
-        .where((s) => s.percentage != null)
-        .map((s) => s.percentage!)
-        .toList();
-        
-    final overallAvg = validPercentages.isNotEmpty
-      ? (validPercentages.reduce((a, b) => a + b) / validPercentages.length).round()
-      : null; // Return null if no classes have sessions
-      
+
+    // Calculate Overall Average
+    int? overallAvg;
+    if (validPercentages.isNotEmpty) {
+      overallAvg = (validPercentages.reduce((a, b) => a + b) / validPercentages.length).round();
+    }
+
     if (mounted) {
       setState(() {
+        _classAttendance = summaries;
         _overallAttendancePercentage = overallAvg ?? 0;
         _overallAttendanceDisplay = overallAvg == null ? 'N/A' : '$overallAvg%';
       });
     }
-
-    return summaries;
   }
-  // -----------------------------------------------------------
 
+  Future<void> _calculateAcademicPerformance(String userId, List<String> classIds) async {
+    if (classIds.isEmpty) return;
 
-  // --- MODIFIED: Renamed to Future<void> for onRefresh ---
-  Future<void> _fetchPerformanceData() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      if (mounted) setState(() => _isLoading = false);
-      return;
-    }
+    // --- A. QUIZ METRICS ---
+    // 1. Get all quizzes for enrolled classes
+    // Firestore whereIn is limited to 10, so we loop or assume <10 for now. 
+    // For robustness, we'll chunk or loop. Here we loop for simplicity.
     
-    if (mounted) setState(() => _isLoading = true);
+    num totalQuizScore = 0;
+    num totalQuizMax = 0;
+    List<GradedItem> recentGrades = [];
 
+    // Fetch Quizzes
+    final quizSnapshots = await FirebaseFirestore.instance
+        .collection('quizzes')
+        .where('courseId', whereIn: classIds.take(10).toList()) // Limit 10 for safety
+        .get();
 
-    try {
-      // 1. Load User Data (Name and Enrolled Classes)
-      final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+    for (var quizDoc in quizSnapshots.docs) {
+      final quizId = quizDoc.id;
+      final quizData = quizDoc.data();
       
-      List<dynamic> classIds = [];
-      if (userDoc.exists) {
-        final data = userDoc.data();
-        final firstName = data?['firstName'] ?? '';
-        final lastName = data?['lastName'] ?? '';
-        if (mounted) {
-          setState(() {
-            _userName = (firstName.isNotEmpty || lastName.isNotEmpty) ? '$firstName $lastName' : user.displayName ?? 'User';
-          });
-        }
+      // Check if student submitted
+      final subDoc = await FirebaseFirestore.instance
+          .collection('quizzes')
+          .doc(quizId)
+          .collection('submissions')
+          .doc(userId)
+          .get();
+
+      if (subDoc.exists) {
+        final subData = subDoc.data()!;
+        final score = subData['score'] as int? ?? 0;
+        final max = subData['maxScore'] as int? ?? 100;
+
+        totalQuizScore += score;
+        totalQuizMax += max;
+
+        recentGrades.add(GradedItem(
+          title: quizData['title'] ?? 'Quiz',
+          type: 'Quiz',
+          score: score,
+          maxScore: max,
+        ));
+      }
+    }
+
+    // --- B. ASSIGNMENT METRICS ---
+    int totalAssignmentsAssigned = 0;
+    int totalAssignmentsSubmitted = 0;
+
+    // Fetch Assignments
+    final assignSnapshots = await FirebaseFirestore.instance
+        .collection('assignments')
+        .where('courseId', whereIn: classIds.take(10).toList())
+        .get();
+
+    totalAssignmentsAssigned = assignSnapshots.docs.length;
+
+    for (var assignDoc in assignSnapshots.docs) {
+      final assignId = assignDoc.id;
+      final assignData = assignDoc.data();
+      final maxPoints = assignData['points'] as int? ?? 100;
+
+      // Check submission
+      final subQuery = await FirebaseFirestore.instance
+          .collection('assignment_submissions')
+          .where('assignmentId', isEqualTo: assignId)
+          .where('studentId', isEqualTo: userId)
+          .limit(1)
+          .get();
+
+      if (subQuery.docs.isNotEmpty) {
+        totalAssignmentsSubmitted++;
+        final subData = subQuery.docs.first.data();
         
-        if (data != null && data.containsKey('enrolledClasses') && data['enrolledClasses'] is List) {
-            classIds = List<String>.from(data['enrolledClasses']);
+        // If graded, add to recent grades list
+        if (subData['graded'] == true || subData['isGraded'] == true) {
+           final score = subData['score'] as int? ?? 0;
+           recentGrades.add(GradedItem(
+             title: assignData['title'] ?? 'Assignment',
+             type: 'Assignment',
+             score: score,
+             maxScore: maxPoints,
+           ));
         }
       }
-      
-      // --- MODIFIED STEP: Fetch overall attendance and per-class summary ---
-      final classAttendanceSummary = await _fetchClassAttendance(user.uid, classIds);
-      // We rely on _fetchClassAttendance to set _overallAttendancePercentage and _overallAttendanceDisplay
-      
-      // 2. Fetch Overall Progress Data from 'progress_tracker'
-      final progressDoc = await FirebaseFirestore.instance
-          .collection('progress_tracker')
-          .doc(user.uid)
-          .get();
+    }
 
-      // 3. Fetch Mid Exam Performance Data from a sub-collection (e.g., 'exams')
-      final examsSnapshot = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .collection('exams')
-          .get();
-      
-      final dynamicExams = examsSnapshot.docs.map((doc) => doc.data()).toList();
+    // Calculate Results
+    int quizAvg = 0;
+    if (totalQuizMax > 0) {
+      quizAvg = ((totalQuizScore / totalQuizMax) * 100).round();
+    }
 
+    int assignmentRate = 0;
+    if (totalAssignmentsAssigned > 0) {
+      assignmentRate = ((totalAssignmentsSubmitted / totalAssignmentsAssigned) * 100).round();
+    }
 
-      if (progressDoc.exists || dynamicExams.isNotEmpty) {
-        final data = progressDoc.data();
-        if (mounted) {
-          setState(() {
-            _classAttendance = classAttendanceSummary; // Set new state variable
-            _quizAverage = data?['overallQuizAverage'] as int? ?? 87; 
-            _goalProgress = data?['overallGoalProgress'] as int? ?? 82;
-
-            // Exam Performance (Dynamic)
-            if (dynamicExams.isNotEmpty) {
-              _midExamPerformance = dynamicExams.map((examData) => {
-                'subject': examData['subject'] as String? ?? 'N/A',
-                'score': examData['score'] as int? ?? 0,
-              }).toList();
-            } else {
-              // Use Figma placeholders if no dynamic data found
-              _midExamPerformance = [
-                {'subject': 'Mathematics', 'score': 78},
-                {'subject': 'DSA', 'score': 55},
-                {'subject': 'Computer System', 'score': 55},
-              ];
-            }
-          });
-        }
-      } else {
-         // Use default Figma values if no progress document exists
-         if (mounted) {
-           setState(() {
-             _classAttendance = classAttendanceSummary; // Set new state variable
-             _quizAverage = 87;
-             _goalProgress = 82;
-             _midExamPerformance = [
-                {'subject': 'Mathematics', 'score': 78},
-                {'subject': 'DSA', 'score': 55},
-                {'subject': 'Computer System', 'score': 55},
-              ];
-           });
-         }
-      }
-
-    } catch (e) {
-      debugPrint('Error fetching performance data: $e');
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+    if (mounted) {
+      setState(() {
+        _quizAverage = quizAvg;
+        _hasQuizData = totalQuizMax > 0;
+        _assignmentCompletionRate = assignmentRate;
+        // Show last 5 graded items
+        _recentGrades = recentGrades.take(5).toList(); 
+      });
     }
   }
 
@@ -234,155 +297,109 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
         backgroundColor: primaryColor,
         foregroundColor: Colors.white,
       ),
-      // --- WRAP SCROLLABLE CONTENT IN REFRESH INDICATOR ---
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
-              onRefresh: _fetchPerformanceData,
+              onRefresh: _fetchDynamicData,
               child: SingleChildScrollView(
-                // Ensure SingleChildScrollView works with RefreshIndicator
-                physics: const AlwaysScrollableScrollPhysics(), 
+                physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // --- Welcome Banner ---
+                    // 1. Welcome Banner
                     Text(
-                      'Welcome! $_userName',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: primaryColor),
+                      'Welcome, $_userName!',
+                      style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: primaryColor),
                     ),
                     const SizedBox(height: 5),
                     const Text(
-                      'Ready to achieve your goals today?',
+                      'Here is your real-time academic progress.',
                       style: TextStyle(fontSize: 16, color: Colors.grey),
                     ),
                     const SizedBox(height: 25),
 
-                    // --- NEW SECTION: Overall Attendance Goal Tracker ---
+                    // 2. Attendance Section
                     _buildAttendanceGoalTracker(primaryColor),
                     const SizedBox(height: 30),
-                    
-                    // --- NEW SECTION: Per-Class Attendance Summary ---
                     _buildPerClassAttendanceSummary(primaryColor),
                     const SizedBox(height: 30),
                     
-                    // --- Quiz Average Card ---
+                    // 3. Quiz Average
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        _buildMetricCard(
-                          context,
-                          title: 'Quiz Average',
-                          value: '$_quizAverage%',
-                          feedback: _quizAverage >= 80 ? 'Excellent work' : 'Keep practicing', 
-                          icon: Icons.quiz_outlined,
+                        Expanded(
+                          child: _buildMetricCard(
+                            context,
+                            title: 'Quiz Average',
+                            value: _hasQuizData ? '$_quizAverage%' : 'N/A',
+                            feedback: !_hasQuizData 
+                                ? 'No quizzes taken yet.' 
+                                : (_quizAverage >= 80 ? 'Great job!' : 'Keep practicing.'),
+                            icon: Icons.quiz_outlined,
+                            isPositive: _quizAverage >= 75,
+                          ),
+                        ),
+                        const SizedBox(width: 15),
+                        Expanded(
+                          child: _buildMetricCard(
+                            context,
+                            title: 'Assignments Done',
+                            value: '$_assignmentCompletionRate%',
+                            feedback: 'Submission Rate',
+                            icon: Icons.assignment_turned_in,
+                            isPositive: _assignmentCompletionRate >= 80,
+                          ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 30),
 
-                    // --- Performance Overview (Mid Exams) ---
-                    const Text(
-                      'Performance Overview',
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    // 4. Recent Graded Items (Dynamic replacement for Mid Exams)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Recent Graded Work',
+                          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                        ),
+                        if (_recentGrades.isNotEmpty)
+                          Text(
+                            'Last ${_recentGrades.length}', 
+                            style: const TextStyle(color: Colors.grey),
+                          ),
+                      ],
                     ),
                     const Divider(thickness: 1),
-                    ..._midExamPerformance.map((exam) => _buildExamProgress(
-                          exam['subject'],
-                          exam['score'],
-                          primaryColor,
-                        )),
+                    
+                    if (_recentGrades.isEmpty)
+                       const Padding(
+                         padding: EdgeInsets.symmetric(vertical: 20.0),
+                         child: Center(child: Text('No graded assignments or quizzes yet.')),
+                       )
+                    else
+                      ..._recentGrades.map((item) => _buildGradedItemRow(item, primaryColor)).toList(),
+
                     const SizedBox(height: 30),
 
-                    // --- Goal Progress Tracker (Original) ---
-                    _buildGoalProgress(primaryColor),
+                    // 5. Assignment Completion Goal
+                    _buildCompletionGoalTracker(primaryColor),
+                    const SizedBox(height: 30),
                   ],
                 ),
               ),
             ),
-      // --- END REFRESH INDICATOR WRAP ---
     );
   }
 
-  // ... (Rest of the helper methods are unchanged) ...
+  // --- Widgets ---
 
-  Widget _buildPerClassAttendanceSummary(Color primaryColor) {
-    if (_classAttendance.isEmpty) {
-      return const SizedBox.shrink();
-    }
-    
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Class Attendance Summary',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-        ),
-        const Divider(thickness: 1),
-        // Use Column/ListView.builder with shrinkWrap/physics for scrolling compatibility
-        Column(
-          children: _classAttendance.map((summary) => _buildClassAttendanceTile(summary, primaryColor)).toList(),
-        ),
-      ],
-    );
-  }
-  
-  Widget _buildClassAttendanceTile(ClassAttendanceSummary summary, Color primaryColor) {
-    // --- FIX: Check for null percentage before calculating isSafe ---
-    final bool isSafe = summary.percentage != null && summary.percentage! >= _attendanceTarget;
-    final Color color = summary.percentage == null ? Colors.grey : (isSafe ? Colors.green : Colors.red);
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: color.withOpacity(0.1),
-          child: Text(
-            summary.displayPercentage, // Use the pre-formatted display string
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: color)
-          ),
-        ),
-        title: Text(
-          summary.className,
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
-        subtitle: Text(
-          // Display session count only if sessions exist
-          summary.totalSessions > 0 
-            ? 'Attended ${summary.attendedSessions} of ${summary.totalSessions} sessions.'
-            : 'No attendance sessions held.',
-          style: const TextStyle(color: Colors.grey),
-        ),
-        trailing: Icon(
-          summary.percentage == null ? Icons.info_outline : (isSafe ? Icons.check_circle : Icons.warning),
-          color: color,
-        ),
-      ),
-    );
-  }
-  // --- END NEW WIDGET: Per-Class Attendance Summary ---
-
-
-  // --- WIDGET: Combined Attendance Goal Tracker (Renamed from _attendancePercentage to _overallAttendancePercentage) ---
   Widget _buildAttendanceGoalTracker(Color primaryColor) {
-    // --- FIX: Check if overall data is N/A ---
     final bool isDataAvailable = _overallAttendanceDisplay != 'N/A';
     final int percentage = _overallAttendancePercentage;
     final bool isSafe = percentage >= _attendanceTarget;
     final Color progressColor = isDataAvailable ? (isSafe ? Colors.green : Colors.red) : Colors.grey;
-    final String feedback;
     
-    if (!isDataAvailable) {
-        feedback = 'ℹ️ Data N/A: No attendance sessions have been held across your enrolled classes yet.';
-    } else {
-        feedback = isSafe 
-            ? '✅ Excellent! Your attendance is above the required minimum.' 
-            : '⚠️ Warning: You need to attend more classes to reach the 70% minimum.';
-    }
-    // ------------------------------------------
-        
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
@@ -391,7 +408,7 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Overall Attendance Goal', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            const Text('Overall Attendance', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 15),
             Row(
               children: [
@@ -402,17 +419,16 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
                       width: 80,
                       height: 80,
                       child: CircularProgressIndicator(
-                        // Value is 0.0 if N/A, otherwise the actual ratio
-                        value: isDataAvailable ? (percentage / 100.0).clamp(0.0, 1.0) : 0.0, 
+                        value: isDataAvailable ? (percentage / 100.0).clamp(0.0, 1.0) : 0.0,
                         backgroundColor: Colors.grey[200],
                         valueColor: AlwaysStoppedAnimation<Color>(progressColor),
                         strokeWidth: 8,
                       ),
                     ),
                     Text(
-                      _overallAttendanceDisplay, // Use the new display string
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: progressColor)
-                    ), 
+                      _overallAttendanceDisplay,
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: progressColor),
+                    ),
                   ],
                 ),
                 const SizedBox(width: 20),
@@ -420,14 +436,13 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Target: $_attendanceTarget%',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                      ),
+                      Text('Target: $_attendanceTarget%', style: const TextStyle(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 5),
                       Text(
-                        feedback,
-                        style: TextStyle(fontSize: 14, color: isDataAvailable ? (isSafe ? Colors.green.shade700 : Colors.red.shade700) : Colors.grey.shade700),
+                        isDataAvailable 
+                           ? (isSafe ? 'You are on track!' : 'Attendance is below target.') 
+                           : 'No attendance data yet.',
+                        style: TextStyle(color: Colors.grey[700], fontSize: 13),
                       ),
                     ],
                   ),
@@ -439,43 +454,78 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
       ),
     );
   }
-  // --- END WIDGET: Combined Attendance Goal Tracker ---
 
+  Widget _buildPerClassAttendanceSummary(Color primaryColor) {
+    if (_classAttendance.isEmpty) return const SizedBox.shrink();
 
-  Widget _buildMetricCard(BuildContext context, {required String title, required String value, required String feedback, required IconData icon}) {
-    final bool isPositive = _quizAverage >= 80;
-    final Color iconColor = isPositive ? Colors.green : Colors.orange;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Class Breakdown', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 10),
+        Column(
+          children: _classAttendance.map((summary) {
+            final bool isSafe = summary.percentage != null && summary.percentage! >= _attendanceTarget;
+            final Color color = summary.percentage == null ? Colors.grey : (isSafe ? Colors.green : Colors.orange);
+            
+            return Card(
+              margin: const EdgeInsets.only(bottom: 8),
+              elevation: 1,
+              child: ListTile(
+                dense: true,
+                leading: CircleAvatar(
+                  backgroundColor: color.withOpacity(0.1),
+                  child: Text(summary.displayPercentage, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: color)),
+                ),
+                title: Text(summary.className, style: const TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text('${summary.attendedSessions}/${summary.totalSessions} Sessions'),
+                trailing: Icon(
+                  summary.percentage == null ? Icons.hourglass_empty : (isSafe ? Icons.check_circle : Icons.warning),
+                  color: color,
+                  size: 20,
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMetricCard(BuildContext context, {
+    required String title, 
+    required String value, 
+    required String feedback, 
+    required IconData icon,
+    required bool isPositive
+  }) {
+    final Color color = isPositive ? Colors.green : Colors.orange;
 
     return Card(
-      elevation: 4,
+      elevation: 3,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-      child: Container(
+      child: Padding(
         padding: const EdgeInsets.all(16),
-        width: MediaQuery.of(context).size.width * 0.9,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Icon(icon, color: iconColor, size: 28),
-                const Spacer(),
-                Text(
-                  value,
-                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.indigo),
-                ),
-              ],
-            ),
+            Icon(icon, color: color, size: 28),
             const SizedBox(height: 10),
-            Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 4),
-            Text(feedback, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary)),
+            const SizedBox(height: 5),
+            Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+            Text(feedback, style: const TextStyle(fontSize: 11, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildExamProgress(String subject, int score, Color primaryColor) {
+  Widget _buildGradedItemRow(GradedItem item, Color primaryColor) {
+    final bool isGreat = item.percentage >= 0.8;
+    final bool isGood = item.percentage >= 0.5;
+    final Color color = isGreat ? Colors.green : (isGood ? Colors.orange : Colors.red);
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10.0),
       child: Column(
@@ -483,27 +533,35 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
         children: [
           Row(
             children: [
-              const Icon(Icons.school, size: 20, color: Colors.orange),
+              Icon(
+                item.type == 'Quiz' ? Icons.timer : Icons.assignment, 
+                size: 18, 
+                color: Colors.grey
+              ),
               const SizedBox(width: 8),
-              Text('Mid Exam: $subject', style: const TextStyle(fontWeight: FontWeight.w500)),
-              const Spacer(),
-              Text('$score%', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: primaryColor)),
+              Expanded(
+                child: Text(item.title, style: const TextStyle(fontWeight: FontWeight.w500)),
+              ),
+              Text(
+                '${item.score}/${item.maxScore}', 
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color)
+              ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           LinearProgressIndicator(
-            value: score / 100.0,
-            backgroundColor: Colors.grey[300],
-            valueColor: AlwaysStoppedAnimation<Color>(score > 70 ? Colors.green : Colors.orange),
-            minHeight: 10,
-            borderRadius: BorderRadius.circular(5),
+            value: item.percentage,
+            backgroundColor: Colors.grey[200],
+            valueColor: AlwaysStoppedAnimation<Color>(color),
+            minHeight: 6,
+            borderRadius: BorderRadius.circular(3),
           ),
         ],
       ),
     );
   }
-  
-  Widget _buildGoalProgress(Color primaryColor) {
+
+  Widget _buildCompletionGoalTracker(Color primaryColor) {
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
@@ -511,14 +569,18 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
         padding: const EdgeInsets.all(16.0),
         child: Row(
           children: [
-            Icon(Icons.track_changes, color: primaryColor, size: 30),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color: primaryColor.withOpacity(0.1), shape: BoxShape.circle),
+              child: Icon(Icons.task_alt, color: primaryColor, size: 24),
+            ),
             const SizedBox(width: 15),
-            Expanded(
+            const Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Goal Progress', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  Text('Target: $_goalTarget%', style: const TextStyle(color: Colors.grey)),
+                  Text('Assignment Completion', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  Text('Percentage of tasks submitted', style: TextStyle(color: Colors.grey, fontSize: 12)),
                 ],
               ),
             ),
@@ -526,16 +588,16 @@ class _UserProgressTrackerPageState extends State<UserProgressTrackerPage> {
               alignment: Alignment.center,
               children: [
                 SizedBox(
-                  width: 60,
-                  height: 60,
+                  width: 50,
+                  height: 50,
                   child: CircularProgressIndicator(
-                    value: _goalProgress / 100.0,
+                    value: _assignmentCompletionRate / 100.0,
                     backgroundColor: Colors.grey[200],
                     valueColor: AlwaysStoppedAnimation<Color>(primaryColor),
-                    strokeWidth: 6,
+                    strokeWidth: 5,
                   ),
                 ),
-                Text('$_goalProgress%', style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text('$_assignmentCompletionRate%', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
               ],
             ),
           ],
