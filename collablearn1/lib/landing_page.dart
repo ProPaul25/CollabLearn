@@ -1,4 +1,4 @@
-// lib/landing_page.dart - FIXED with Pull-to-Refresh AND Combined Class Lists
+// lib/landing_page.dart - UPDATED with Student Management Navigation
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -10,6 +10,7 @@ import 'join_class_page.dart';
 import 'create_class_page.dart';
 import 'course_dashboard_page.dart';
 import 'user_progress_tracker_page.dart';
+import 'instructor_courses_page.dart'; // <-- NEW IMPORT
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -40,27 +41,22 @@ class _LandingPageState extends State<LandingPage> {
   @override
   void initState() {
     super.initState();
-    // No explicit call here; moved to didChangeDependencies for proper lifecycle handling
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Initial data load when the widget dependencies change (e.g., first build)
     _loadUserData();
   }
 
-  // --- MODIFIED: Load data now returns a Future<void> for RefreshIndicator ---
   Future<void> _loadUserData() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      // Set loading state explicitly at the start
       if (mounted) setState(() => _isClassesLoading = true);
 
       await user.reload();
       final refreshedUser = FirebaseAuth.instance.currentUser;
 
-      // NEW FIX: Add a brief wait here for Firestore synchronization on initial sign-in
       if (refreshedUser?.displayName == null && refreshedUser?.email != null) {
         await Future.delayed(const Duration(milliseconds: 500));
       }
@@ -86,27 +82,20 @@ class _LandingPageState extends State<LandingPage> {
             }
           });
 
-          // --- START OF FIX ---
-          // Use a Set to gather unique class IDs
           final classIdsSet = <String>{};
 
-          // 1. Add enrolled classes (for students)
           if (data.containsKey('enrolledClasses') &&
               data['enrolledClasses'] is List) {
             classIdsSet.addAll(List<String>.from(data['enrolledClasses']));
           }
 
-          // 2. Add instructed classes (for instructors/co-instructors)
           if (data.containsKey('instructedClasses') &&
               data['instructedClasses'] is List) {
             classIdsSet.addAll(List<String>.from(data['instructedClasses']));
           }
 
-          // Convert the Set back to a List for the query
           final classIds = classIdsSet.toList();
-          // --- END OF FIX ---
-
-          await _fetchEnrolledClasses(classIds); // Await this to finish loading
+          await _fetchEnrolledClasses(classIds); 
         }
       } else if (mounted) {
         setState(() {
@@ -118,7 +107,6 @@ class _LandingPageState extends State<LandingPage> {
         await _fetchEnrolledClasses([]);
       }
     }
-    // ClassesLoading set to false inside _fetchEnrolledClasses finally block
   }
 
   Future<void> _fetchEnrolledClasses(List<dynamic> classIds) async {
@@ -134,7 +122,6 @@ class _LandingPageState extends State<LandingPage> {
     try {
       if (mounted) setState(() => _isClassesLoading = true);
 
-      // 1. KEEP THE FIRESTORE QUERY SIMPLE (NO 'isArchived' FILTER HERE)
       final classesSnapshot = await FirebaseFirestore.instance
           .collection('classes')
           .where(FieldPath.documentId,
@@ -142,7 +129,6 @@ class _LandingPageState extends State<LandingPage> {
                   0, classIds.length > 10 ? 10 : classIds.length))
           .get();
 
-      // 2. Map and filter locally in Dart
       final allClasses = classesSnapshot.docs.map((doc) {
         final data = doc.data();
         data['classId'] = doc.id;
@@ -154,7 +140,6 @@ class _LandingPageState extends State<LandingPage> {
 
       if (mounted) {
         setState(() {
-          // Set the state with the filtered list
           _enrolledClasses = filteredClasses;
         });
       }
@@ -172,7 +157,6 @@ class _LandingPageState extends State<LandingPage> {
   }
 
   Widget _buildDrawerHeader() {
-    // ... (This method is unchanged) ...
     return UserAccountsDrawerHeader(
       accountName: Text(
         _userName,
@@ -194,8 +178,6 @@ class _LandingPageState extends State<LandingPage> {
   }
 
   List<Widget> _buildMenuItems() {
-    // ... (This method is unchanged) ...
-    // Instructor Menu
     if (_userRole == 'instructor' || _userRole == 'Co-Instructor') {
       return [
         ListTile(
@@ -216,26 +198,31 @@ class _LandingPageState extends State<LandingPage> {
           leading: const Icon(Icons.archive),
           title: const Text('Archived Classes'),
           onTap: () {
-            Navigator.pop(context); // Close the drawer
+            Navigator.pop(context); 
             Navigator.of(context).push(
               MaterialPageRoute(
-                builder: (context) =>
-                    const ArchivedClassesPage(), // Navigate to the new page
+                builder: (context) => const ArchivedClassesPage(), 
               ),
-            )
-                .then((_) {
-              // Re-fetch classes in case one was unarchived
+            ).then((_) {
               _loadUserData();
             });
           },
         ),
+        // --- UPDATED STUDENT MANAGEMENT BUTTON ---
         ListTile(
             leading: const Icon(Icons.people_alt_outlined),
             title: const Text('Student Management'),
-            onTap: () => Navigator.pop(context)),
+            onTap: () {
+              Navigator.pop(context); // Close drawer
+              Navigator.push(
+                context, 
+                MaterialPageRoute(builder: (context) => const InstructorCoursesPage()),
+              );
+            }
+        ),
+        // -----------------------------------------
       ];
     } else {
-      // Student Menu
       return [
         ListTile(
             leading: const Icon(Icons.class_outlined),
@@ -255,7 +242,6 @@ class _LandingPageState extends State<LandingPage> {
 
   @override
   Widget build(BuildContext context) {
-    // ... (Build method is unchanged) ...
     return Scaffold(
       appBar: AppBar(
         title: const Text('HOME'),
@@ -332,9 +318,8 @@ class _LandingPageState extends State<LandingPage> {
           ],
         ),
       ),
-      // --- WRAP THE BODY IN REFRESH INDICATOR ---
       body: RefreshIndicator(
-        onRefresh: _loadUserData, // Call the data loading function
+        onRefresh: _loadUserData, 
         child: Column(
           children: [
             Expanded(
@@ -376,12 +361,10 @@ class _LandingPageState extends State<LandingPage> {
           ],
         ),
       ),
-      // --- END REFRESH INDICATOR WRAP ---
     );
   }
 
   Widget _buildProfileCard() {
-    // ... (This method is unchanged) ...
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
       child: Card(
@@ -478,7 +461,6 @@ class _LandingPageState extends State<LandingPage> {
   }
 
   Widget _buildClassesView() {
-    // ... (This method is unchanged) ...
     if (_isClassesLoading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -501,7 +483,6 @@ class _LandingPageState extends State<LandingPage> {
         ),
         Expanded(
           child: ListView.builder(
-            // NOTE: ListView is now scrollable due to RefreshIndicator wrapping the Column
             itemCount: _enrolledClasses.length,
             itemBuilder: (context, index) {
               final classData = _enrolledClasses[index];
@@ -515,7 +496,6 @@ class _LandingPageState extends State<LandingPage> {
 
   Widget _buildClassListItem(
       BuildContext context, Map<String, dynamic> classData) {
-    // ... (This method is unchanged) ...
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       elevation: 3,
@@ -548,7 +528,6 @@ class _LandingPageState extends State<LandingPage> {
   }
 
   Widget _buildNoClassesView() {
-    // ... (This method is unchanged) ...
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -575,7 +554,6 @@ class _LandingPageState extends State<LandingPage> {
   }
 
   Widget _buildCreateClassButton() {
-    // ... (This method is unchanged) ...
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 40),
       child: SizedBox(
@@ -624,7 +602,6 @@ class _LandingPageState extends State<LandingPage> {
   }
 
   Widget _buildJoinClassButton() {
-    // ... (This method is unchanged) ...
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 40),
       child: SizedBox(
