@@ -1,4 +1,4 @@
-// lib/assignment_detail_page.dart - CORRECTED
+// lib/assignment_detail_page.dart - FIXED: Co-Instructors see Review View, not Submit View
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -7,14 +7,14 @@ import 'package:file_picker/file_picker.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
-import 'package:flutter/foundation.dart' show kIsWeb; // <-- NEW IMPORT
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 // Import necessary files
 import 'study_materials_view_page.dart'; // Contains Assignment and AssignmentItem models
 import 'create_assignment_page.dart';     // For instructor's Edit button
 import 'submission_review_page.dart';    // For instructor's overall review page
 
-// --- CLOUDINARY DEPENDENCY (Ensure these are correct) ---
+// --- CLOUDINARY DEPENDENCY ---
 const String _CLOUD_NAME = 'dc51dx2da';
 const String _UPLOAD_PRESET = 'CollabLearn';
 
@@ -33,7 +33,7 @@ class AssignmentDetailPage extends StatefulWidget {
 
 class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
   final _currentUser = FirebaseAuth.instance.currentUser;
-  late final Future<bool> _isInstructorFuture;
+  late Future<bool> _isInstructorFuture;
 
   // Student submission state
   PlatformFile? _pickedFile;
@@ -45,6 +45,7 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
   @override
   void initState() {
     super.initState();
+    // Initialize the future to determine role
     _isInstructorFuture = _isCurrentUserInstructor();
     _loadCurrentUserData();
   }
@@ -63,27 +64,52 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
         final String firstName = data?['firstName'] ?? '';
         final String lastName = data?['lastName'] ?? '';
         String calculatedName = "$firstName $lastName".trim();
-        setState(() {
-          _currentUserName = calculatedName.isEmpty
-              ? (_currentUser.email ?? 'Anonymous')
-              : calculatedName;
-        });
+        if (mounted) {
+          setState(() {
+            _currentUserName = calculatedName.isEmpty
+                ? (_currentUser.email ?? 'Anonymous')
+                : calculatedName;
+          });
+        }
       }
     } catch (e) {
       debugPrint('Error loading user data: $e');
     }
   }
 
+  // --- FIX: Robust check for Co-Instructors ---
   Future<bool> _isCurrentUserInstructor() async {
     if (_currentUser == null) return false;
-    return widget.assignment.postedById == _currentUser.uid;
+
+    // 1. Optimization: If they posted it, they are definitely an instructor.
+    if (widget.assignment.postedById == _currentUser.uid) return true;
+
+    // 2. Deep Check: Query the class document to see if they are a Co-Instructor.
+    try {
+      final classDoc = await FirebaseFirestore.instance
+          .collection('classes')
+          .doc(widget.assignment.courseId)
+          .get();
+
+      if (!classDoc.exists) return false;
+
+      final data = classDoc.data();
+      final primaryInstructorId = data?['instructorId'];
+      final coInstructorIds = List<String>.from(data?['instructorIds'] ?? []);
+
+      return primaryInstructorId == _currentUser.uid || 
+             coInstructorIds.contains(_currentUser.uid);
+             
+    } catch (e) {
+      debugPrint('Error checking instructor role: $e');
+      return false;
+    }
   }
 
   Future<void> _fetchUserSubmission() async {
     if (_currentUser == null) return;
 
     final submissionQuery = await FirebaseFirestore.instance
-        // FIX 2: Changed 'submissions' to 'assignment_submissions'
         .collection('assignment_submissions')
         .where('assignmentId', isEqualTo: widget.assignment.id)
         .where('studentId', isEqualTo: _currentUser.uid)
@@ -119,17 +145,14 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
     }
   }
 
-  // --- Cloudinary Upload Logic (FIXED for Mobile + Web) ---
   Future<String?> _uploadFileToCloudinary(PlatformFile file) async {
     try {
       final CloudinaryResourceType resourceType = file.extension == 'pdf' 
           ? CloudinaryResourceType.Auto
           : CloudinaryResourceType.Raw;
 
-      // FIX 1: Create the correct CloudinaryFile type based on platform
       CloudinaryFile fileToUpload;
       if (kIsWeb) {
-        // WEB: Use bytes
         if (file.bytes == null) {
           _showSnackBar('Error: File bytes are null on web.');
           return null;
@@ -141,7 +164,6 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
           identifier: file.name,
         );
       } else {
-        // MOBILE: Use path
         if (file.path == null) {
           _showSnackBar('Error: File path is null on mobile.');
           return null;
@@ -214,7 +236,6 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
         'isGraded': false,
         'grade': null,
         'feedback': null,
-        // FIX 2: Added missing fields that student_submission_detail needs
         'courseId': widget.assignment.courseId, 
         'graded': false,
         'score': null,
@@ -223,7 +244,6 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
       if (_existingSubmission != null) {
         // RESUBMIT/UPDATE
         await FirebaseFirestore.instance
-            // FIX 2: Changed 'submissions' to 'assignment_submissions'
             .collection('assignment_submissions')
             .doc(_existingSubmission!['submissionDocId'])
             .update(submissionData);
@@ -231,13 +251,11 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
       } else {
         // NEW SUBMISSION
         await FirebaseFirestore.instance
-            // FIX 2: Changed 'submissions' to 'assignment_submissions'
             .collection('assignment_submissions')
             .add(submissionData);
         _showSnackBar('Assignment successfully submitted!');
       }
 
-      // Reload submission status
       await _fetchUserSubmission();
     } catch (e) {
       debugPrint('Error submitting assignment: $e');
@@ -292,12 +310,11 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
     );
   }
 
-  // --- Student View (Unchanged) ---
+  // --- Student View ---
   Widget _buildStudentSubmissionView() {
     final primaryColor = Theme.of(context).colorScheme.primary;
     final dueDateTime = widget.assignment.dueDate.toDate();
     final isOverdue = DateTime.now().isAfter(dueDateTime);
-    // FIXED: Removed unused deadlineText variable
 
     String statusText;
     Color statusColor;
@@ -306,7 +323,6 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
     if (_existingSubmission != null) {
       final isGraded = _existingSubmission!['isGraded'] == true;
       if (isGraded) {
-        // FIX: Use 'score' field to match instructor's page
         statusText = 'GRADED: ${_existingSubmission!['score'] ?? 'N/A'} / ${widget.assignment.points}';
         statusColor = Colors.green.shade800;
         statusIcon = Icons.done_all;
@@ -326,7 +342,6 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Submission Status Card
           Card(
             color: Color.fromRGBO(statusColor.red, statusColor.green, statusColor.blue, 0.1), 
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: statusColor)),
@@ -346,7 +361,6 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
           ),
           const SizedBox(height: 20),
           
-          // Submission Form
           Text(
             _existingSubmission != null ? 'Resubmit Your Work' : 'Submit Your Work',
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
@@ -359,8 +373,8 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
               children: [
                 const Text('Current Submission:'),
                 _buildFileLink(
-                  _existingSubmission!['fileUrl'], // FIX: Use 'fileUrl'
-                  _existingSubmission!['fileName'], // FIX: Use 'fileName'
+                  _existingSubmission!['fileUrl'], 
+                  _existingSubmission!['fileName'], 
                   Colors.blue.shade700,
                 ),
                 const SizedBox(height: 15),
@@ -428,7 +442,6 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
             ),
           ),
           
-          // Optional: Display grade/feedback
           if (_existingSubmission != null && _existingSubmission!['isGraded'] == true) ...[
             const SizedBox(height: 20),
             Text('Instructor Feedback', style: Theme.of(context).textTheme.titleLarge),
@@ -450,7 +463,7 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
     );
   }
 
-  // --- Instructor View (Unchanged) ---
+  // --- Instructor View ---
   Widget _buildInstructorReviewView(String classId) {
     final assignmentItem = AssignmentItem(
       id: widget.assignment.id,
@@ -471,7 +484,6 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
     );
   }
 
-  // --- Main Build Method (Unchanged) ---
   @override
   Widget build(BuildContext context) {
     final primaryColor = Theme.of(context).colorScheme.primary;
@@ -569,6 +581,7 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
             backgroundColor: primaryColor,
             foregroundColor: Colors.white,
             actions: [
+              // Only Instructors (Primary or Co) can see the edit button
               if (isInstructor)
                 PopupMenuButton<String>(
                   onSelected: (value) async {
@@ -607,24 +620,19 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
             ],
           ),
           
-          // Use DefaultTabController for tabbed view
           body: isInstructor
               ? DefaultTabController(
                   length: 2,
                   child: Column(
                     children: [
-                      // Assignment Details in the top scrollable area
                       Expanded(
                         child: TabBarView(
                           children: [
-                            // 1. Details Tab
                             assignmentDetails,
-                            // 2. Submissions Tab
                             _buildInstructorReviewView(widget.assignment.courseId),
                           ],
                         ),
                       ),
-                      // Tab Bar fixed at the bottom
                       Container(
                         color: primaryColor,
                         child: const TabBar(
@@ -640,16 +648,13 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
                     ],
                   ),
                 )
-              // Student View: Single view
               : Column(
                   children: [
-                    // Assignment Details in a fixed height area
                     SizedBox(
                       height: MediaQuery.of(context).size.height * 0.4,
                       child: assignmentDetails,
                     ),
                     const Divider(height: 1),
-                    // Submission View in the remaining area
                     Expanded(
                       child: _buildStudentSubmissionView(),
                     ),
