@@ -1,13 +1,22 @@
-// lib/register_page.dart - UPDATED with Email Domain Restriction
+// lib/register_page.dart - UPDATED for Theme props and Navigation
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:collablearn1/email_verification_page.dart'; // ADDED Import
 
 enum UserRole { instructor, student }
 
 class RegisterPage extends StatefulWidget {
-  const RegisterPage({super.key});
+  // ADDED Theme Properties
+  final VoidCallback onToggleTheme;
+  final bool isDarkMode;
+
+  const RegisterPage({
+    super.key,
+    required this.onToggleTheme,
+    required this.isDarkMode,
+  });
 
   @override
   State<RegisterPage> createState() => _RegisterPageState();
@@ -45,6 +54,7 @@ class _RegisterPageState extends State<RegisterPage> {
     super.dispose();
   }
 
+  // --- SignUp Function (UPDATED for Verification Navigation) ---
   Future<void> _onSignUp() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -52,6 +62,7 @@ class _RegisterPageState extends State<RegisterPage> {
     setState(() => _isLoading = true);
     
     final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
     
     // --- FINAL DOMAIN CHECK (Defense in Depth) ---
     if (!email.endsWith(_ALLOWED_DOMAIN)) {
@@ -66,10 +77,10 @@ class _RegisterPageState extends State<RegisterPage> {
     // ---------------------------------------------
 
     try {
-      // 1. Authenticate user with Firebase Auth
+      // 1. Authenticate user with Firebase Auth 
       final userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: email,
-        password: _passwordController.text.trim(),
+        password: password,
       );
 
       final user = userCredential.user;
@@ -77,37 +88,35 @@ class _RegisterPageState extends State<RegisterPage> {
         throw Exception("User creation failed.");
       }
 
-      String userIdentifier = '';
+      // 2. Send Email Verification (The "OTP" step)
+      await user.sendEmailVerification();
+      
+      // 3. Prepare user data for Firestore
+      String userIdentifier = (_selectedRole == UserRole.student) 
+          ? _entryNoController.text.trim() 
+          : _instructorIdController.text.trim();
+          
       Map<String, dynamic> userData = {
         'firstName': _firstNameController.text.trim(),
         'lastName': _lastNameController.text.trim(),
-        'role': _selectedRole.toString().split('.').last, // 'student' or 'instructor'
+        'role': _selectedRole.toString().split('.').last, 
         'email': email,
         'createdAt': FieldValue.serverTimestamp(),
-        'enrolledClasses': [], // Initialize enrolled classes array
-        'profileImageBase64': null, // Initialize profile image
+        'enrolledClasses': [], 
+        'profileImageBase64': null, 
+        'entryNo': (_selectedRole == UserRole.student) ? userIdentifier : '',
+        'instructorId': (_selectedRole == UserRole.instructor) ? userIdentifier : '',
+        // IMPORTANT: Add an isVerified flag to control access until verification is complete
+        'isEmailVerified': false, 
       };
 
-      // 2. Set user-specific identifier (Entry No or Instructor ID)
-      if (_selectedRole == UserRole.student) {
-        userIdentifier = _entryNoController.text.trim();
-        userData['entryNo'] = userIdentifier;
-        userData['instructorId'] = '';
-      } else {
-        userIdentifier = _instructorIdController.text.trim();
-        userData['instructorId'] = userIdentifier;
-        userData['entryNo'] = '';
-      }
-
-      // 3. Perform batch write for user profile and lookup document
+      // 4. Perform batch write for user profile and lookup document
       final batch = FirebaseFirestore.instance.batch();
       final userDocRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
       batch.set(userDocRef, userData);
 
-      // Create a lookup document for username/ID login functionality
       if (userIdentifier.isNotEmpty) {
         final lookupDocRef = FirebaseFirestore.instance.collection('user_lookups').doc(userIdentifier);
-        // The lookup doc links the identifier (e.g., Entry No) to the user's email and UID.
         batch.set(lookupDocRef, {
           'uid': user.uid, 
           'email': email
@@ -115,13 +124,29 @@ class _RegisterPageState extends State<RegisterPage> {
       }
 
       await batch.commit();
+      
+      // 5. Log out the user after registration to force them through verification flow
+      await FirebaseAuth.instance.signOut();
+
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Registration Successful!'), backgroundColor: Colors.green),
+          const SnackBar(
+            content: Text('Verification email sent! Please check your inbox.'), 
+            backgroundColor: Colors.green
+          ),
         );
-        // Navigate back to the LoginPage
-        Navigator.pop(context); 
+        
+        // NEW NAVIGATION: Navigate to EmailVerificationPage
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(
+            builder: (context) => EmailVerificationPage(
+              onToggleTheme: widget.onToggleTheme,
+              isDarkMode: widget.isDarkMode,
+            ),
+          ), 
+          (route) => route.isFirst, // Pop everything until the main auth/login route
+        );
       }
     } on FirebaseAuthException catch (e) {
       String message = 'An error occurred. Please try again.';
@@ -244,7 +269,7 @@ class _RegisterPageState extends State<RegisterPage> {
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
-                            onPressed: _isLoading ? null : _onSignUp,
+                            onPressed: _isLoading ? null : _onSignUp, // Calls the updated _onSignUp
                             style: ElevatedButton.styleFrom(
                               padding: const EdgeInsets.symmetric(vertical: 15),
                               backgroundColor: const Color(0xFF8A2BE2),

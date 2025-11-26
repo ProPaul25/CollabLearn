@@ -1,9 +1,9 @@
-// lib/email_verification_page.dart - NEW FILE
+// lib/email_verification_page.dart
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
-import 'main.dart'; // Import main.dart for AuthGate
+import 'package:collablearn1/main.dart'; // Import main.dart for AuthGate
 
 class EmailVerificationPage extends StatefulWidget {
   final VoidCallback onToggleTheme;
@@ -151,7 +151,7 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
               Icon(Icons.mark_email_unread, size: 100, color: primaryColor),
               const SizedBox(height: 30),
               const Text(
-                'A verification link has been sent to your email.',
+                'A verification link has been sent to your email address.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),

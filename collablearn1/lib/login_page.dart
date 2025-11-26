@@ -3,8 +3,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:collablearn1/register_page.dart';
+import 'package:collablearn1/email_verification_page.dart'; // ADDED Import
 
 class LoginPage extends StatefulWidget {
   final VoidCallback onToggleTheme;
@@ -34,7 +34,7 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
-  // --- Email/Password Login Function ---
+  // --- Email/Password Login Function (UPDATED for Verification Check) ---
   Future<void> _login() async {
     final loginIdentifier = _emailController.text.trim();
     final password = _passwordController.text.trim();
@@ -69,10 +69,39 @@ class _LoginPageState extends State<LoginPage> {
         }
       }
 
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
+      final userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: emailToLogin,
         password: password,
       );
+      
+      final user = userCredential.user;
+
+      // === NEW: VERIFICATION CHECK ===
+      if (user != null && !user.emailVerified) {
+        // If user logged in but email is NOT verified, sign them out and redirect
+        await FirebaseAuth.instance.signOut();
+        
+        if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                    content: Text('Your email is not verified. Redirecting to verification screen.'), 
+                    backgroundColor: Colors.orange
+                ),
+            );
+            // Redirect to EmailVerificationPage
+            Navigator.of(context).push(
+                MaterialPageRoute(
+                    builder: (context) => EmailVerificationPage(
+                        onToggleTheme: widget.onToggleTheme,
+                        isDarkMode: widget.isDarkMode
+                    ),
+                ),
+            );
+        }
+        return; // Stop login process
+      }
+      // === END VERIFICATION CHECK ===
+
 
     } on FirebaseAuthException catch (e) {
       String message;
@@ -100,7 +129,7 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  // --- Forgot Password Function ---
+  // --- Forgot Password Function (unchanged) ---
   Future<void> _resetPassword() async {
     final email = _emailController.text.trim();
 
@@ -166,64 +195,6 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  // --- Google Sign In Function ---
-  Future<void> _signInWithGoogle() async {
-    setState(() => _isLoading = true);
-    try {
-      final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
-      if (googleUser == null) {
-        setState(() => _isLoading = false);
-        return;
-      }
-      
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
-      final OAuthCredential credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-      
-      final userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
-      final user = userCredential.user;
-
-      if (user == null) {
-        throw Exception("Google Sign-in failed to return a user.");
-      }
-
-      final userDocRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
-      final userDoc = await userDocRef.get();
-
-      if (!userDoc.exists) {
-        String firstName = googleUser.displayName?.split(' ').first ?? '';
-        String lastName = googleUser.displayName?.split(' ').last ?? '';
-        if (firstName == lastName) lastName = ''; 
-        
-        await userDocRef.set({
-          'firstName': firstName,
-          'lastName': lastName,
-          'role': 'student', 
-          'email': user.email,
-          'createdAt': FieldValue.serverTimestamp(),
-          'enrolledClasses': [],
-          'profileImageBase64': null,
-          'entryNo': '',
-          'instructorId': '',
-        });
-      }
-      
-    } on FirebaseAuthException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error with Google Sign-in: ${e.message}'), backgroundColor: Colors.red));
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('An error occurred: ${e.toString()}'), backgroundColor: Colors.red));
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -273,7 +244,7 @@ class _LoginPageState extends State<LoginPage> {
                           const SizedBox(height: 30),
                           _buildTextField(
                             controller: _emailController,
-                            hintText: 'Email ID', // <-- THIS IS THE FIX
+                            hintText: 'Email ID', 
                             prefixIcon: Icons.person_outline,
                             keyboardType: TextInputType.emailAddress,
                           ),
@@ -316,7 +287,11 @@ class _LoginPageState extends State<LoginPage> {
                                   Navigator.push(
                                     context,
                                     PageRouteBuilder(
-                                      pageBuilder: (context, animation, secondaryAnimation) => const RegisterPage(),
+                                      // PASSED THEME PROPS TO RegisterPage
+                                      pageBuilder: (context, animation, secondaryAnimation) => RegisterPage(
+                                        onToggleTheme: widget.onToggleTheme,
+                                        isDarkMode: widget.isDarkMode,
+                                      ),
                                       transitionsBuilder: (context, animation, secondaryAnimation, child) {
                                         const begin = Offset(1.0, 0.0);
                                         const end = Offset.zero;
@@ -331,33 +306,6 @@ class _LoginPageState extends State<LoginPage> {
                               ),
                             ],
                           ),
-                          const SizedBox(height: 20),
-                          Text('or sign in with', style: TextStyle(color: Theme.of(context).textTheme.bodyMedium!.color)),
-                          const SizedBox(height: 20),
-                          
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              onPressed: _isLoading ? null : _signInWithGoogle,
-                              style: ElevatedButton.styleFrom(
-                                foregroundColor: isDark ? Colors.white : Colors.black,
-                                backgroundColor: isDark ? const Color(0xFF2A314D) : Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 18),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15), side: BorderSide(color: Colors.grey.shade300)),
-                              ),
-                              child: _isLoading
-                                  ? const Center(child: SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2)))
-                                  : Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Image.asset('assets/google.png', height: 24.0),
-                                        const SizedBox(width: 8.0),
-                                        const Text('Sign in with Google', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                                      ],
-                                    ),
-                            ),
-                          ),
-                          
                         ],
                       ),
                     ),
@@ -413,7 +361,7 @@ class _LoginPageState extends State<LoginPage> {
         controller: controller,
         keyboardType: keyboardType,
         decoration: InputDecoration(
-          hintText: hintText, // <-- USES THE ORIGINAL HINT TEXT
+          hintText: hintText,
           contentPadding: const EdgeInsets.symmetric(vertical: 18),
           prefixIcon: Icon(prefixIcon, color: primaryColor),
           border: InputBorder.none,
