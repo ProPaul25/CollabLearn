@@ -1,11 +1,9 @@
-// lib/attendance_management_page.dart - CORRECTED with Const Fix
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'start_attendance_session_page.dart';
 import 'dart:async';
-import 'submit_attendance_page.dart'; // IMPORTANT: This is now the QR Scanner page
+import 'submit_attendance_page.dart'; 
 import 'attendance_report_page.dart';
 
 class AttendanceManagementPage extends StatelessWidget {
@@ -16,7 +14,7 @@ class AttendanceManagementPage extends StatelessWidget {
     required this.classId,
   });
 
-  // Re-used function to check if the current user is the instructor of this course
+
   Future<bool> isCurrentUserInstructor() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return false;
@@ -30,7 +28,7 @@ class AttendanceManagementPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Determine the current user's role to show the correct view
+
     return FutureBuilder<bool>(
       future: isCurrentUserInstructor(),
       builder: (context, snapshot) {
@@ -48,30 +46,21 @@ class AttendanceManagementPage extends StatelessWidget {
   }
 }
 
-// lib/attendance_management_page.dart (InstructorAttendanceView)
 
-// =================================================================
-// INSTRUCTOR VIEW (Management) - STABLE & CORRECTED VERSION
-// =================================================================
 class InstructorAttendanceView extends StatelessWidget {
   final String classId;
 
   const InstructorAttendanceView({super.key, required this.classId});
-  
-  // New Future<void> wrapper to be used by RefreshIndicator
+
   Future<void> _manualRefresh() async {
-    // Since this view uses a StreamBuilder, we force a short delay 
-    // to give Firestore time to update its cache, triggering a refresh.
-    await Future.delayed(const Duration(milliseconds: 500)); 
+       await Future.delayed(const Duration(milliseconds: 500)); 
   }
 
   @override
   Widget build(BuildContext context) {
     final primaryColor = Theme.of(context).colorScheme.primary;
 
-    // 1. StreamBuilder handles all rebuilds based on Firestore data
     return StreamBuilder<QuerySnapshot>(
-      // Stream past attendance sessions, ordered by most recent
       stream: FirebaseFirestore.instance
           .collection('attendance_sessions')
           .where('courseId', isEqualTo: classId)
@@ -88,7 +77,6 @@ class InstructorAttendanceView extends StatelessWidget {
         final sessions = snapshot.data?.docs ?? [];
         QueryDocumentSnapshot? activeSession;
         
-        // 2. Find the active session using a simple loop (No setState!)
         for (var doc in sessions) {
           final data = doc.data() as Map<String, dynamic>;
           final endTime = (data['endTime'] as Timestamp).toDate();
@@ -98,15 +86,13 @@ class InstructorAttendanceView extends StatelessWidget {
           }
         }
         
-        // 3. Derive state locally and use it to control the FAB
         final hasActiveSession = activeSession != null; 
 
-        // --- WRAP CONTENT IN REFRESH INDICATOR ---
         return Scaffold(
           body: RefreshIndicator(
             onRefresh: _manualRefresh,
             child: sessions.isEmpty
-                ? ListView( // Must be a ListView/CustomScrollView for RefreshIndicator to work when empty
+                ? ListView( 
                     children: const [
                       SizedBox(height: 100),
                       Center(child: Text('No attendance sessions created yet.', style: TextStyle(fontSize: 16))),
@@ -151,15 +137,12 @@ class InstructorAttendanceView extends StatelessWidget {
                   ),
           ),
           
-          // FAB is outside the ListView, correctly placed in the Scaffold
           floatingActionButton: _buildFab(context, classId, hasActiveSession, primaryColor),
         );
-        // --- END OF CORRECT SCAFFOLD WITH LISTVIEW ---
       },
     );
   }
   
-  // Helper method for the Floating Action Button
   Widget _buildFab(BuildContext context, String classId, bool hasActiveSession, Color primaryColor) {
     return FloatingActionButton.extended(
       onPressed: hasActiveSession ? null : () {
@@ -177,15 +160,12 @@ class InstructorAttendanceView extends StatelessWidget {
   }
 }
 
-// =================================================================
-// STUDENT VIEW (Attendance History)
-// =================================================================
+
 class StudentAttendanceView extends StatelessWidget {
   final String classId;
 
   const StudentAttendanceView({super.key, required this.classId});
   
-  // This helps students find the active session to submit the code
   Future<QueryDocumentSnapshot?> _getActiveSession() async {
     final snapshot = await FirebaseFirestore.instance
         .collection('attendance_sessions')
@@ -197,7 +177,6 @@ class StudentAttendanceView extends StatelessWidget {
     if (snapshot.docs.isNotEmpty) {
       final latestSession = snapshot.docs.first;
       final endTime = (latestSession.data()['endTime'] as Timestamp).toDate();
-      // Check if the session is still active
       if (endTime.isAfter(DateTime.now())) {
         return latestSession;
       }
@@ -205,25 +184,18 @@ class StudentAttendanceView extends StatelessWidget {
     return null;
   }
 
-  // --- NEW: Helper to get total session count for percentage ---
   Future<int> _getTotalSessionCount() async {
     final snapshot = await FirebaseFirestore.instance
         .collection('attendance_sessions')
         .where('courseId', isEqualTo: classId)
-        // Only count sessions that have ended or are running (for a more accurate ratio)
-        // We will count all sessions here. The 'records' stream handles actual attendance.
         .count()
         .get();
     
     return snapshot.count ?? 0;
   }
   
-  // New Future<void> wrapper to be used by RefreshIndicator
   Future<void> _manualRefresh() async {
-    // In a Stateless Widget with Future/Stream builders, forcing a manual rebuild 
-    // requires wrapping the builder tree in a StatefulWidget, but here we just
-    // return a Future. The outer FutureBuilder will re-run its logic when it completes.
-    // For simplicity and avoiding major structural changes, we just return a slight delay.
+
     await Future.delayed(const Duration(milliseconds: 500)); 
   }
 
@@ -233,22 +205,18 @@ class StudentAttendanceView extends StatelessWidget {
     final userId = FirebaseAuth.instance.currentUser!.uid;
 
     return FutureBuilder<QueryDocumentSnapshot?>(
-      // Future 1: Check for an active session
       future: _getActiveSession(), 
       builder: (context, activeSessionSnapshot) {
         final activeSessionDoc = activeSessionSnapshot.data;
 
         return Scaffold(
-          // --- WRAP ENTIRE BODY CONTENT IN REFRESH INDICATOR ---
           body: RefreshIndicator(
             onRefresh: _manualRefresh,
             child: FutureBuilder<int>(
-              // Future 2: Get the total session count
               future: _getTotalSessionCount(),
               builder: (context, totalSessionsSnapshot) {
 
                 return StreamBuilder<QuerySnapshot>(
-                  // Stream 1: Stream the student's own attendance records
                   stream: FirebaseFirestore.instance
                       .collection('attendance_records')
                       .where('studentId', isEqualTo: userId)
@@ -257,9 +225,7 @@ class StudentAttendanceView extends StatelessWidget {
                   builder: (context, recordSnapshot) {
                     if (recordSnapshot.connectionState == ConnectionState.waiting || 
                         totalSessionsSnapshot.connectionState == ConnectionState.waiting) {
-                      // --- FIX: Remove const from ListView and children where CircularProgressIndicator is used ---
                       return ListView(children: [Center(child: Padding(padding: const EdgeInsets.only(top: 100), child: CircularProgressIndicator()))]);
-                      // --- END FIX ---
                     }
                     if (recordSnapshot.hasError || totalSessionsSnapshot.hasError) {
                       return Center(child: Text('Error: ${recordSnapshot.error ?? totalSessionsSnapshot.error}'));
@@ -268,7 +234,6 @@ class StudentAttendanceView extends StatelessWidget {
                     final records = recordSnapshot.data?.docs ?? [];
                     final totalPresent = records.length;
                     
-                    // --- FIX: Use the real total session count ---
                     final totalSessions = totalSessionsSnapshot.data ?? 0; 
                     final String attendancePercentageDisplay = totalSessions > 0 
                         ? (totalPresent / totalSessions * 100).toStringAsFixed(0)
@@ -277,7 +242,6 @@ class StudentAttendanceView extends StatelessWidget {
 
                     return ListView(
                       padding: const EdgeInsets.all(16),
-                      // Key forces ListView to be recreated, ensuring it interacts properly with RefreshIndicator when loading
                       key: const PageStorageKey('studentAttendanceList'), 
                       children: [
                         Card(
@@ -323,15 +287,10 @@ class StudentAttendanceView extends StatelessWidget {
               }
             ),
           ),
-          // --- END REFRESH INDICATOR WRAP ---
 
-          // Student FAB to scan QR code if a session is active
           floatingActionButton: activeSessionDoc != null
               ? FloatingActionButton.extended(
                   onPressed: () {
-                    // Navigate to the QR scanner page. 
-                    // The submitted code/ID will be scanned, not passed as a parameter.
-                    // We pass dummy data for required fields to satisfy the old constructor.
                     Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (context) => const SubmitAttendancePage(

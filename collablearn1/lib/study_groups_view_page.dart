@@ -1,10 +1,9 @@
-// lib/study_groups_view_page.dart - FIXED
+// lib/study_groups_view_page.dart 
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'study_group_chat_page.dart';
-// NEW IMPORT (No new import needed for this fix, Filter is part of cloud_firestore)
 
 class StudyGroupsViewPage extends StatefulWidget {
   final String classId;
@@ -77,7 +76,6 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
         return {
           'uid': doc.id,
           'name': name.isEmpty ? (data['email'] ?? 'User') : name,
-          // FIX: Ensure 'isInstructor' is explicitly set to a boolean
           'isInstructor': doc.id == instructorId,
         };
       }).where((u) => u['uid'] != user.uid).toList();
@@ -198,7 +196,7 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
         'classId': widget.classId,
         'createdBy': user.uid, // Store creator's UID
         'creatorName': _currentUserName,
-        'memberUids': initialMemberUids, // FIX: Only the creator is an initial member
+        'memberUids': initialMemberUids, 
         'inviteeUids': allInviteeUids,
         'createdAt': FieldValue.serverTimestamp(),
       });
@@ -213,12 +211,10 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
     }
   }
 
-  // --- Group List Stream (FIXED) ---
   Stream<QuerySnapshot> _getStudyGroupsStream() {
     return FirebaseFirestore.instance
         .collection('study_groups')
         .where('classId', isEqualTo: widget.classId)
-        // FIX: Use Filter.or to find groups where the user is
         // either a member OR an invitee.
         .where(Filter.or(
           Filter('memberUids', arrayContains: user.uid),
@@ -310,7 +306,6 @@ class _StudyGroupsViewPageState extends State<StudyGroupsViewPage> {
           final groups = snapshot.data?.docs ?? [];
 
           // VVVV ADD THIS SORTING LOGIC VVVV
-          // FIX: Sort the documents manually (descending)
           final visibleGroups = groups
             ..sort((a, b) {
               final aData = a.data() as Map<String, dynamic>;

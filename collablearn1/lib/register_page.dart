@@ -1,4 +1,4 @@
-// lib/register_page.dart - UPDATED for Theme props and Navigation
+// lib/register_page.dart
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';

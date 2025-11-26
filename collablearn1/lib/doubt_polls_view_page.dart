@@ -1,4 +1,4 @@
-// lib/doubt_polls_view_page.dart - CORRECTED
+// lib/doubt_polls_view_page.dart 
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -52,7 +52,7 @@ class DoubtPollsViewPage extends StatelessWidget {
     required this.classId,
   });
 
-  // --- FIX: Map the QuerySnapshot to List<DoubtPoll> directly here ---
+  // --- Map the QuerySnapshot to List<DoubtPoll> directly here ---
   Stream<List<DoubtPoll>> getDoubtPollsStream(String courseId) {
     return FirebaseFirestore.instance
         .collection('doubt_polls')

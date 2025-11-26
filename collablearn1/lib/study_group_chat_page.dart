@@ -1,4 +1,4 @@
-// lib/study_group_chat_page.dart - FINAL COMPLETE FIX
+// lib/study_group_chat_page.dart
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -395,7 +395,6 @@ class _StudyGroupChatPageState extends State<StudyGroupChatPage> {
     );
   }
 
-  // --- Media Message Bubble Widget (FIXED: onLongPress added) ---
   Widget _buildMediaMessage(Map<String, dynamic> message, String messageId, bool isMe, Color primaryColor) {
     final isImage = message['type'] == 'image';
     final url = message['url'] as String? ?? '';
@@ -408,7 +407,7 @@ class _StudyGroupChatPageState extends State<StudyGroupChatPage> {
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: InkWell(
         onTap: () => _launchUrl(url),
-        onLongPress: () => _showMessageActions(message, messageId), // <-- FIX: onLongPress added
+        onLongPress: () => _showMessageActions(message, messageId), 
         child: Container(
           margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
           padding: const EdgeInsets.all(8),
@@ -529,7 +528,6 @@ class _StudyGroupChatPageState extends State<StudyGroupChatPage> {
     );
   }
 
-  // --- Message Bubble Widget (FIXED: onLongPress added) ---
   Widget _buildMessageBubble(Map<String, dynamic> message, String messageId, bool isMe, Color primaryColor) {
     final replyToSenderName = message['replyToSenderName'] as String?;
     final replyToText = message['replyToText'] as String?;
@@ -537,7 +535,7 @@ class _StudyGroupChatPageState extends State<StudyGroupChatPage> {
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: InkWell(
-        onLongPress: () => _showMessageActions(message, messageId), // <-- FIX: onLongPress added
+        onLongPress: () => _showMessageActions(message, messageId), 
         child: Container(
           margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
           padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 15),

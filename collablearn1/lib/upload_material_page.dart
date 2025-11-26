@@ -1,4 +1,4 @@
-// lib/upload_material_page.dart - CORRECTED WITH BACKGROUND UPLOAD
+// lib/upload_material_page.dart 
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';

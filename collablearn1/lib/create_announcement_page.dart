@@ -1,4 +1,4 @@
-// lib/create_announcement_page.dart - CORRECTED WITH CLASS FEED UPDATE
+// lib/create_announcement_page.dart 
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';

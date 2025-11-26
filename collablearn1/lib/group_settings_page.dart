@@ -1,4 +1,4 @@
-// lib/group_settings_page.dart - FIX FOR DISABLED 'Add Selected' BUTTON
+// lib/group_settings_page.dart 
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -126,7 +126,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
   }
 
   // Helper function to fetch user data in batches (max 10 per query)
-  // FIX: Added instructorId to properly set 'isInstructor' for the CheckboxListTile
+  // Added instructorId to properly set 'isInstructor' for the CheckboxListTile
   Future<List<Map<String, dynamic>>> _fetchUsersDataInBatches(List<String> uids, String? instructorId) async {
     const batchSize = 10;
     final List<Map<String, dynamic>> allUsers = [];
@@ -146,7 +146,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
         
         final name = "${data['firstName'] ?? ''} ${data['lastName'] ?? ''}".trim();
         
-        // FIX for "type 'Null' is not a 'bool'" error
+
         // Ensure 'isInstructor' is explicitly set to a boolean
         final bool isInstructor = doc.id == instructorId; 
         
@@ -189,8 +189,6 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
         // --- selectedUids is defined here, managed by the StatefulBuilder ---
         List<String> selectedUids = []; 
         
-        // FIX: Wrap the entire AlertDialog content/actions in a single StatefulBuilder
-        // This ensures the button's `onPressed` logic is rebuilt when checkboxes change.
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(

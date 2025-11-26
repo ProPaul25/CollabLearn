@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'course_dashboard_page.dart'; // To access the unarchive method if needed
-// You might need to import the page that contains the actual unarchive method, 
-// if it's not CourseDashboardPage. For now, we'll implement the unarchive action here.
 
 
 class ArchivedClassesPage extends StatefulWidget {

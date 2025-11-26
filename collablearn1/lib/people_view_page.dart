@@ -1,4 +1,4 @@
-// lib/people_view_page.dart - FINAL FIX: Pull-to-Refresh Implemented
+// lib/people_view_page.dart 
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -83,7 +83,7 @@ class _PeopleViewPageState extends State<PeopleViewPage> {
                   userList.add({...data, 'uid': doc.id});
               }
           } else {
-            // FIX: Add a distinct, easily recognizable placeholder for debugging
+
             userList.add({
               'uid': uid,
               'email': 'MISSING USER DATA (UID: $uid)',
@@ -202,7 +202,7 @@ class _PeopleViewPageState extends State<PeopleViewPage> {
                                   builder: (context) => AddCoInstructorPage(classId: widget.classId),
                                 ),
                               );
-                              _reloadData(); // FIX: Reload data when returning
+                              _reloadData(); 
                             },
                             icon: const Icon(Icons.group_add),
                             label: const Text('Add Co-Teacher'),
@@ -262,7 +262,7 @@ class _PeopleViewPageState extends State<PeopleViewPage> {
                                   builder: (context) => AddStudentPage(classId: widget.classId),
                                 ),
                               );
-                              _reloadData(); // FIX: Reload data when returning
+                              _reloadData(); 
                             },
                             icon: const Icon(Icons.person_add),
                             label: const Text('Add Student to Course'),

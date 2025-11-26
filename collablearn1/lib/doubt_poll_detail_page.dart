@@ -1,4 +1,4 @@
-// lib/doubt_poll_detail_page.dart - CORRECTED
+// lib/doubt_poll_detail_page.dart 
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';

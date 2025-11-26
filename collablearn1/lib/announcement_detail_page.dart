@@ -1,4 +1,4 @@
-// lib/announcement_detail_page.dart - FIXED DEPENDENCY & USAGE
+// lib/announcement_detail_page.dart 
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';

@@ -96,7 +96,6 @@ class _InstructorStudentReportPageState extends State<InstructorStudentReportPag
         .get();
     final attendedSessions = attendedRecordsSnapshot.count ?? 0;
 
-    // --- FIX: Return null if no sessions were held ---
     final num? percentage = totalSessions > 0
         ? ((attendedSessions / totalSessions) * 100).round()
         : null;
@@ -157,7 +156,6 @@ class _InstructorStudentReportPageState extends State<InstructorStudentReportPag
       });
     }
 
-    // --- FIX: Return null if total possible points is zero ---
     final int? quizPercentage = totalQuizMaxScore > 0 
       ? ((totalQuizGainedScore / totalQuizMaxScore) * 100).round()
       : null;
@@ -225,7 +223,6 @@ class _InstructorStudentReportPageState extends State<InstructorStudentReportPag
       });
     }
     
-    // --- FIX: Return null if total possible points is zero ---
     final int? overallGainedPercentage = totalPossiblePointsSubmitted > 0
         ? ((totalGainedPoints / totalPossiblePointsSubmitted) * 100).round()
         : null;
@@ -391,7 +388,7 @@ class _InstructorStudentReportPageState extends State<InstructorStudentReportPag
     final int attended = attendance['attendedSessions'] ?? 0;
     final int total = attendance['totalSessions'] ?? 0;
     
-    // --- FIX: Handle null percentage ---
+
     if (percentageNullable == null) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -449,7 +446,7 @@ class _InstructorStudentReportPageState extends State<InstructorStudentReportPag
     final submittedCount = quizzes.where((q) => q['isSubmitted']).length;
     final totalCount = quizzes.length;
     
-    // --- FIX: Handle null overall percentage ---
+
     final String overallDisplay = overallPercentageNullable == null ? 'N/A' : '$overallPercentageNullable% Scored';
     
     return Column(
@@ -507,7 +504,7 @@ class _InstructorStudentReportPageState extends State<InstructorStudentReportPag
     final totalAssignments = assignmentsData['totalAssignments'];
     final int? overallGainedPercentageNullable = assignmentsData['overallGainedPercentage'] as int?;
 
-    // --- FIX: Handle null overall percentage ---
+
     final String overallDisplay = overallGainedPercentageNullable == null ? 'N/A' : '$overallGainedPercentageNullable% Gained';
 
 

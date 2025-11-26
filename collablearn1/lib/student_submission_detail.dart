@@ -1,4 +1,4 @@
-// lib/student_submission_detail.dart - FIXED
+// lib/student_submission_detail.dart 
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -134,9 +134,7 @@ class _StudentSubmissionDetailState extends State<StudentSubmissionDetail> {
               body: Center(child: Text('Submission not found.')));
         }
 
-        // FIX 1: Read 'fileUrl' not 'submittedFileUrl'
         final fileUrl = submissionData['fileUrl'] as String? ?? '';
-        // FIX 2: Read 'fileName' not 'submittedFileName'
         final fileName = submissionData['fileName'] as String? ?? 'Submission File';
         final isGraded = submissionData['graded'] ?? false;
         final score = submissionData['score'];
@@ -173,7 +171,6 @@ class _StudentSubmissionDetailState extends State<StudentSubmissionDetail> {
                       leading: const Icon(Icons.file_download, color: Colors.green),
                       title: Text(fileName,
                           style: const TextStyle(fontWeight: FontWeight.bold)),
-                      // FIX 3: Read 'submittedOn' not 'submissionTime'
                       subtitle: Text(
                           'Submitted on: ${(submissionData['submittedOn'] as Timestamp).toDate().toString().split('.')[0]}'),
                       trailing: const Icon(Icons.open_in_new),

@@ -1,5 +1,3 @@
-// lib/assignment_detail_page.dart - FIXED: Co-Instructors see Review View, not Submit View
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';

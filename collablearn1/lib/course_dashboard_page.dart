@@ -1,6 +1,5 @@
-// lib/course_dashboard_page.dart - FINAL FIX: Corrected Imports
+// lib/course_dashboard_page.dart 
 
-// lib/course_dashboard_page.dart - FINAL FIX: Cleaned Imports (Confirmed)
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart'; 
@@ -15,10 +14,10 @@ import 'attendance_management_page.dart';
 import 'create_announcement_page.dart'; 
 import 'study_groups_view_page.dart'; 
 
-// FIX: Import StreamTab widget and Announcement model from stream_page.dart where they are defined
+// Import StreamTab widget and Announcement model from stream_page.dart where they are defined
 import 'stream_page.dart' show StreamTab, Announcement; 
 
-// FIX: Import all required DATA MODELS from study_materials_view_page.dart
+// Import all required DATA MODELS from study_materials_view_page.dart
 import 'study_materials_view_page.dart' show AssignmentItem, Assignment, QuizItem, StudyMaterial; 
 
 // Navigation targets

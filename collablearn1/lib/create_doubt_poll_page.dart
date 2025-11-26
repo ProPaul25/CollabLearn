@@ -1,4 +1,4 @@
-// lib/create_doubt_poll_page.dart - CORRECTED
+// lib/create_doubt_poll_page.dart 
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -51,7 +51,7 @@ class _CreateDoubtPollPageState extends State<CreateDoubtPollPage> {
       final user = FirebaseAuth.instance.currentUser!;
       final postTime = Timestamp.now();
       
-      // --- FIX: Use a batch write ---
+      // ---  : Use a batch write ---
       final batch = FirebaseFirestore.instance.batch();
 
       // 1. Create the original doubt poll
@@ -83,7 +83,7 @@ class _CreateDoubtPollPageState extends State<CreateDoubtPollPage> {
       });
       
       await batch.commit();
-      // --- END OF FIX ---
+      
 
       if (mounted) {
         Navigator.pop(context);

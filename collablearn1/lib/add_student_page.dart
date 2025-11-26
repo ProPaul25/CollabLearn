@@ -1,4 +1,4 @@
-// lib/add_student_page.dart - FIXED FOR USER ENROLLMENT AND BUTTON STATE
+// lib/add_student_page.dart
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';

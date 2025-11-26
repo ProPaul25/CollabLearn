@@ -1,4 +1,4 @@
-// lib/create_assignment_page.dart - CORRECTED AND COMPLETE WITH BACKGROUND UPLOAD
+// lib/create_assignment_page.dart -
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -6,7 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart'; 
 import 'package:cloudinary_public/cloudinary_public.dart'; 
-import 'package:flutter/foundation.dart' show kIsWeb; // <-- NEW IMPORT
+import 'package:flutter/foundation.dart' show kIsWeb; 
 
 // --- CLOUDINARY INSTANCE ---
 const String _CLOUD_NAME = 'dc51dx2da'; 
@@ -118,9 +118,9 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
     }
   }
 
-  // --- NEW: Upload on Selection Function (FIXED) ---
+  // --- NEW: Upload on Selection Function ---
   Future<void> _uploadOnSelection(PlatformFile file) async {
-    // FIX: Removed the 'file.bytes == null' check. 
+    // Removed the 'file.bytes == null' check. 
     // This check fails on mobile where 'bytes' is null but 'path' is not.
 
     setState(() {
@@ -147,14 +147,14 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
     }
   }
 
-  // --- Cloudinary Upload Logic (FIXED for Mobile + Web) ---
+  // --- Cloudinary Upload Logic ---
   Future<String?> _uploadFileToCloudinary(PlatformFile file) async {
     try {
       final CloudinaryResourceType resourceType = file.extension == 'pdf' 
           ? CloudinaryResourceType.Auto
           : CloudinaryResourceType.Raw;
 
-      // FIX: Create the correct CloudinaryFile type based on platform
+      //  Create the correct CloudinaryFile type based on platform
       CloudinaryFile fileToUpload;
       if (kIsWeb) {
         // WEB: Use bytes

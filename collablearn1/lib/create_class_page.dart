@@ -1,10 +1,10 @@
-// lib/create_class_page.dart - FIXED
+// lib/create_class_page.dart 
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:math';
-import 'course_dashboard_page.dart'; // <-- FIX: Changed to relative import
+import 'course_dashboard_page.dart'; 
 
 class CreateClassPage extends StatefulWidget {
   const CreateClassPage({super.key});
