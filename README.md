@@ -58,7 +58,6 @@
 |:---:|:---:|:---:|:---:|
 | <img src="path/to/login.png" width="200"> | <img src="path/to/dashboard.png" width="200"> | <img src="path/to/qr.png" width="200"> | <img src="path/to/quiz.png" width="200"> |
 
-*(Note: Replace `path/to/image.png` with your actual image paths)*
 
 ---
 
@@ -134,3 +133,4 @@ To build for iOS, configure `ios/Runner/Info.plist`:
 
 ```bash
 flutter run
+
