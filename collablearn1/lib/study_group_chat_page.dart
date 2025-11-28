@@ -1,4 +1,4 @@
-// lib/study_group_chat_page.dart
+// lib/study_group_chat_page.dart - FINAL COMPLETE FIX
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -110,7 +110,7 @@ class _StudyGroupChatPageState extends State<StudyGroupChatPage> {
     }
   }
 
-  // --- File Picking and Sending Logic (Unchanged) ---
+  // --- File Picking and Sending Logic (FIXED: Initial file check for web/non-web) ---
   Future<void> _pickAndSendFile() async {
     if (_isUploading) return;
 
@@ -119,9 +119,25 @@ class _StudyGroupChatPageState extends State<StudyGroupChatPage> {
       allowedExtensions: ['pdf', 'docx', 'doc', 'txt', 'zip', 'png', 'jpg', 'jpeg'],
     );
     
-    if (result == null || result.files.first.bytes == null) return;
+    if (result == null) return;
     
     final pickedFile = result.files.first;
+
+    // FIX: Ensure the file has data relevant to the platform before continuing.
+    // Web requires bytes; non-web requires path.
+    if (kIsWeb) {
+      if (pickedFile.bytes == null) {
+        debugPrint('File bytes are null for web upload.');
+        return;
+      }
+    } else {
+      if (pickedFile.path == null) {
+        debugPrint('File path is null for non-web upload.');
+        return;
+      }
+    }
+    // END FIX
+
     
     setState(() {
       _isUploading = true;
@@ -139,6 +155,7 @@ class _StudyGroupChatPageState extends State<StudyGroupChatPage> {
       
       CloudinaryFile fileToUpload;
       if (kIsWeb) {
+        // Web upload using byte data
         fileToUpload = CloudinaryFile.fromByteData(
           pickedFile.bytes!.buffer.asByteData(), 
           resourceType: resourceType,
@@ -147,6 +164,7 @@ class _StudyGroupChatPageState extends State<StudyGroupChatPage> {
           identifier: pickedFile.name, 
         );
       } else {
+        // Mobile/Desktop upload using file path
         fileToUpload = CloudinaryFile.fromFile(
           pickedFile.path!, 
           resourceType: resourceType,
@@ -395,6 +413,7 @@ class _StudyGroupChatPageState extends State<StudyGroupChatPage> {
     );
   }
 
+  // --- Media Message Bubble Widget (FIXED: onLongPress added) ---
   Widget _buildMediaMessage(Map<String, dynamic> message, String messageId, bool isMe, Color primaryColor) {
     final isImage = message['type'] == 'image';
     final url = message['url'] as String? ?? '';
@@ -407,7 +426,7 @@ class _StudyGroupChatPageState extends State<StudyGroupChatPage> {
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: InkWell(
         onTap: () => _launchUrl(url),
-        onLongPress: () => _showMessageActions(message, messageId), 
+        onLongPress: () => _showMessageActions(message, messageId), // <-- FIX: onLongPress added
         child: Container(
           margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
           padding: const EdgeInsets.all(8),
@@ -528,6 +547,7 @@ class _StudyGroupChatPageState extends State<StudyGroupChatPage> {
     );
   }
 
+  // --- Message Bubble Widget (FIXED: onLongPress added) ---
   Widget _buildMessageBubble(Map<String, dynamic> message, String messageId, bool isMe, Color primaryColor) {
     final replyToSenderName = message['replyToSenderName'] as String?;
     final replyToText = message['replyToText'] as String?;
@@ -535,7 +555,7 @@ class _StudyGroupChatPageState extends State<StudyGroupChatPage> {
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: InkWell(
-        onLongPress: () => _showMessageActions(message, messageId), 
+        onLongPress: () => _showMessageActions(message, messageId), // <-- FIX: onLongPress added
         child: Container(
           margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
           padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 15),
